@@ -1,0 +1,42 @@
+# Django stuff:
+*.log
+*.pot
+*.pyc
+__pycache__/
+db.sqlite3
+media/
+
+# If you’re using Django’s collectstatic
+/staticfiles/
+/static/
+
+# Python
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environment
+venv/
+ENV/
+env/
+.venv/
+
+# IDEs and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Unit test / coverage reports
+.coverage
+.tox/
+.pytest_cache/
+htmlcov/
