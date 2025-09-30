@@ -13,6 +13,22 @@ from .views import (
     view_wishlist,
     add_to_wishlist,
     remove_from_wishlist,
+    place_order,
+    view_orders,
+    get_notifications,
+    mark_notification_read,
+    initiate_paytm_payment,
+    payment_callback,
+    upload_quotation,
+    list_order_quotations,
+    start_or_get_conversation,
+    list_conversations_for_user,
+    list_messages,
+    send_message,
+    request_quotation_preorder,
+    list_my_quotation_requests,
+    upload_quotation_for_request,
+    get_quotation_for_request,
 )
 
 urlpatterns = [
@@ -41,4 +57,32 @@ urlpatterns = [
     path("wishlist/", view_wishlist, name="wishlist-view"),
     path("wishlist/add/", add_to_wishlist, name="wishlist-add"),
     path("wishlist/remove/<int:pk>/", remove_from_wishlist, name="wishlist-remove"),
+
+    # Orders
+    path("orders/place/", place_order, name="order-place"),
+    path("orders/", view_orders, name="order-list"),
+
+    # Notifications
+    path("notifications/", get_notifications, name="notification-list"),
+    path("notifications/<int:pk>/read/", mark_notification_read, name="notification-read"),
+
+    # Paytm
+    path("paytm/initiate/<int:order_id>/", initiate_paytm_payment, name="paytm-initiate"),
+    path('paytm/callback/', payment_callback, name='paytm-callback'),
+
+    # Quotations / invoices (post-order)
+    path("orders/<int:order_id>/quotations/upload/", upload_quotation, name="upload-quotation"),
+    path("orders/<int:order_id>/quotations/", list_order_quotations, name="list-quotations"),
+
+    # Pre-order quotation requests
+    path("quotation-requests/products/<int:product_id>/request/", request_quotation_preorder, name="request-quotation-preorder"),
+    path("quotation-requests/", list_my_quotation_requests, name="list-quotation-requests"),
+    path("quotation-requests/<int:request_id>/upload/", upload_quotation_for_request, name="upload-quotation-request"),
+    path("quotation-requests/<int:request_id>/quotation/", get_quotation_for_request, name="get-quotation-request"),
+
+    # Product chat (post-order)
+    path("conversations/start-or-get/", start_or_get_conversation, name="start-conversation"),
+    path("conversations/", list_conversations_for_user, name="list-conversations"),
+    path("conversations/<int:conversation_id>/messages/", list_messages, name="list-messages"),
+    path("conversations/<int:conversation_id>/messages/send/", send_message, name="send-message"),
 ]
