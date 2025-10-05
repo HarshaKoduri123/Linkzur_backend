@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import path, re_path
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .views import (
     register_user,
@@ -85,4 +85,7 @@ urlpatterns = [
     path("conversations/", list_conversations_for_user, name="list-conversations"),
     path("conversations/<int:conversation_id>/messages/", list_messages, name="list-messages"),
     path("conversations/<int:conversation_id>/messages/send/", send_message, name="send-message"),
+
+    
+
 ]

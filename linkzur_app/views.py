@@ -32,6 +32,10 @@ from .utils.paytm_utils import (
 # ------------------------
 # User Endpoints
 # ------------------------
+def index(request):
+    return render(request, 'index.html')
+
+    
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register_user(request):
@@ -239,9 +243,11 @@ def initiate_paytm_payment(request, order_id):
     try:
         order = Order.objects.get(id=order_id, buyer=request.user)
     except Order.DoesNotExist:
+    
         return Response({"detail": "Order not found"}, status=404)
 
     unique_order_id = f"{order.id}_{int(time.time())}"
+
 
     body = {
         "requestType": "Payment",
@@ -261,9 +267,12 @@ def initiate_paytm_payment(request, order_id):
     checksum = generate_checksum(body)
     payload = {"body": body, "head": {"signature": checksum}}
     url = f"{PAYTM_INITIATE_URL}?mid={PAYTM_MID}&orderId={unique_order_id}"
+    print(url)
 
     try:
         response = requests.post(url, json=payload, timeout=15)
+        print("Status Code:", response.status_code)
+        print("Response Text:", response.text)
         data = response.json()
         print("Paytm Initiate Response:", data)
     except Exception as e:

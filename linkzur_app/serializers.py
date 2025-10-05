@@ -10,7 +10,7 @@ from .models import (
     Quotation,
     ProductConversation,
     ProductMessage,
-    QuotationRequest,   # ✅ new
+    QuotationRequest,  
 )
 
 
