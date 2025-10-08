@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.urls import path, include, re_path
 from django.conf import settings
 from django.conf.urls.static import static
+import os
 from django.views.generic import TemplateView
 
 urlpatterns = [
@@ -16,3 +17,7 @@ if not settings.DEBUG:
 # Serve media in dev
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+if settings.DEBUG or os.environ.get("SERVE_MEDIA", "") == "1":
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
