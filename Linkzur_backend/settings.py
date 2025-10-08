@@ -6,7 +6,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = 'django-insecure-#-bl8c4rg*&g)(%s+gdb9kwwmi82#$j^v@kkjdye2d=0^qdqin'
 
-DEBUG = True  # ⚠️ Change to False before deploying to Render
+DEBUG = False # ⚠️ Change to False before deploying to Render
 
 ALLOWED_HOSTS = [
     "127.0.0.1",
@@ -16,8 +16,10 @@ ALLOWED_HOSTS = [
 
 # ✅ CORS setup
 CORS_ALLOWED_ORIGINS = [
-
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
 ]
+
 CORS_ALLOW_CREDENTIALS = True  # optional but often useful
 
 # ✅ Media setup

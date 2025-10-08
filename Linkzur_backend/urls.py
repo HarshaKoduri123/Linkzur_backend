@@ -9,10 +9,10 @@ urlpatterns = [
     path('api/', include('linkzur_app.urls')),
 ]
 
-# ✅ Serve static + media files (in dev only)
-if settings.DEBUG:
-    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Only serve React build in production (DEBUG=False)
+if not settings.DEBUG:
+    urlpatterns += [re_path(r'^.*$', TemplateView.as_view(template_name='index.html'))]
 
-# ✅ Add this LAST so it doesn’t override static
-urlpatterns += [re_path(r'^.*$', TemplateView.as_view(template_name='index.html'))]
+# Serve media in dev
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
