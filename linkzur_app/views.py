@@ -181,14 +181,16 @@ def add_to_wishlist(request):
 
 @api_view(["DELETE"])
 @permission_classes([IsAuthenticated])
-def remove_from_wishlist(request, pk):
+def remove_from_wishlist(request, product_id):
+    """
+    Remove a wishlist item for the current user based on product_id.
+    """
     try:
-        item = WishlistItem.objects.get(pk=pk, user=request.user)
+        item = WishlistItem.objects.get(product_id=product_id, user=request.user)
         item.delete()
         return Response({"detail": "Removed from wishlist"}, status=200)
     except WishlistItem.DoesNotExist:
         return Response({"detail": "Not found"}, status=404)
-
 
 # ------------------------
 # Order Endpoints

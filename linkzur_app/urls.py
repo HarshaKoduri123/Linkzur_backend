@@ -56,7 +56,7 @@ urlpatterns = [
     # Wishlist
     path("wishlist/", view_wishlist, name="wishlist-view"),
     path("wishlist/add/", add_to_wishlist, name="wishlist-add"),
-    path("wishlist/remove/<int:pk>/", remove_from_wishlist, name="wishlist-remove"),
+    path("wishlist/remove/<int:product_id>/", remove_from_wishlist, name="remove-from-wishlist"),
 
     # Orders
     path("orders/place/", place_order, name="order-place"),
