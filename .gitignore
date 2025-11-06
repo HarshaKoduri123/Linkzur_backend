@@ -1,15 +1,23 @@
-# Django stuff:
+# ===================================
+# Django
+# ===================================
 *.log
 *.pot
 *.pyc
 __pycache__/
 media/
 
-# If you’re using Django’s collectstatic
+# Django collectstatic
 /staticfiles/
 /static/
 
+# Database files
+db.sqlite3
+*.db
+
+# ===================================
 # Python
+# ===================================
 *.py[cod]
 *.so
 *.egg
@@ -18,26 +26,32 @@ dist/
 build/
 .eggs/
 
-# Virtual environment
+# ===================================
+# Virtual environments
+# ===================================
 venv/
 ENV/
 env/
 .venv/
 
+# ===================================
 # IDEs and editors
+# ===================================
 .vscode/
 .idea/
 *.swp
 *.swo
 
+# ===================================
 # OS files
+# ===================================
 .DS_Store
 Thumbs.db
 
+# ===================================
 # Unit test / coverage reports
+# ===================================
 .coverage
 .tox/
 .pytest_cache/
 htmlcov/
-
-*.sqlite3
