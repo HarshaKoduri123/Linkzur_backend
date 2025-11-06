@@ -6,27 +6,20 @@ from dotenv import load_dotenv
 
 load_dotenv()  # Load environment variables from .env
 
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-EMAIL_HOST = os.getenv("EMAIL_HOST")
-EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
-EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True") == "True"
-EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "False") == "True"
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
-EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
-
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = 'django-insecure-#-bl8c4rg*&g)(%s+gdb9kwwmi82#$j^v@kkjdye2d=0^qdqin'
 
-DEBUG = True  # ⚠️ Change to False before deploying to Render
+DEBUG = False  # ⚠️ Change to False before deploying to Render
 
 ALLOWED_HOSTS = [
     "127.0.0.1",
     "localhost",
-    ".onrender.com",  # ✅ allow Render domain
+    "linkzur.com",
+    "www.linkzur.com",
 ]
+
 
 # ✅ CORS setup
 CORS_ALLOWED_ORIGINS = [
@@ -138,3 +131,7 @@ AUTH_USER_MODEL = 'linkzur_app.CustomUser'
 
 X_FRAME_OPTIONS = 'SAMEORIGIN'
 
+CSRF_TRUSTED_ORIGINS = [
+    "https://linkzur.com",
+    "https://www.linkzur.com",
+]
