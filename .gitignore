@@ -3,7 +3,7 @@
 *.pot
 *.pyc
 __pycache__/
-# media/
+media/
 
 # If you’re using Django’s collectstatic
 /staticfiles/
@@ -39,3 +39,5 @@ Thumbs.db
 .tox/
 .pytest_cache/
 htmlcov/
+
+*.sqlite3
