@@ -369,18 +369,41 @@ def place_order(request):
 
     order = serializer.save()
 
-    # ✅ Ensure each item has a correct price
+    # =============================
+    # APPLY DISCOUNTED PRICE HERE
+    # =============================
     for item in order.items.all():
-        if not item.price or item.price == 0:
-            variant = item.variant or item.product.variants.first()
-            if variant:
-                item.price = variant.price or variant.est_price or 0
-                item.save()
+        variant = item.variant or item.product.variants.first()
 
+        # Base price from variant
+        base_price = 0
+        if variant:
+            base_price = variant.price or variant.est_price or 0
+
+        # Product discount
+        discount = item.product.discount or 0
+
+        # Final discounted price
+        final_price = (
+            base_price - (base_price * (discount / 100))
+            if discount > 0
+            else base_price
+        )
+
+        # Save corrected price
+        item.price = final_price
+        item.save()
+
+    # =============================
+    # SUBTOTAL, TAX & TOTAL
+    # =============================
     subtotal = sum(i.price * i.quantity for i in order.items.all())
     tax = subtotal * Decimal("0.18")
     total = subtotal + tax
 
+    # =============================
+    # CREATE INVOICE
+    # =============================
     invoice = Invoice.objects.create(
         order=order,
         buyer=order.buyer,
