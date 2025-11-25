@@ -1,193 +1,156 @@
 from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin
+
 from .models import (
-    CustomUser,
-    Product,
-    CartItem,
-    WishlistItem,
-    Order,
-    OrderItem,
-    Notification,
-    Payment,
-    QuotationRequest,
-    Quotation,
-    ProductConversation,
-    ProductMessage,
-    Review,
-    Invoice,
-    PendingUser,
-    ProductVariant
+    CustomUser, BuyerProfile, SellerProfile, Product, ProductVariant,
+    CartItem, WishlistItem, Order, OrderItem, Notification,
+    Payment, QuotationRequest, Quotation, ProductConversation,
+    ProductMessage, Review, Invoice, PendingUser
 )
 
-# ------------------------
-# Custom User
-# ------------------------
-@admin.register(CustomUser)
-class CustomUserAdmin(admin.ModelAdmin):
-    list_display = ("id", "email", "name", "phone", "role", "is_active", "is_staff")
-    list_filter = ("role", "is_active", "is_staff")
+# Import reusable email helpers
+from .utils.otp_utils import (
+    send_seller_approval_email,
+    send_seller_reject_email,
+)
+
+
+# ================================
+# CustomUser Admin
+# ================================
+class CustomUserAdmin(UserAdmin):
+    model = CustomUser
+    list_display = ("email", "name", "phone", "role", "is_active", "is_staff")
+    list_filter = ("role", "is_staff", "is_active")
     search_fields = ("email", "name", "phone")
+    ordering = ("email",)
+
+    fieldsets = (
+        ("Login Info", {"fields": ("email", "password")}),
+        ("Personal Info", {"fields": ("name", "phone", "role")}),
+        ("Permissions", {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
+    )
+
+    add_fieldsets = (
+        (None, {
+            "classes": ("wide",),
+            "fields": ("email", "name", "phone", "role", "password1", "password2", "is_staff", "is_superuser"),
+        }),
+    )
 
 
-# ------------------------
-# Product
-# ------------------------
-# Inline editor for variants under each product
+# ================================
+# BuyerProfile Admin
+# ================================
+class BuyerProfileAdmin(admin.ModelAdmin):
+    list_display = ("user", "username", "buyer_category", "organization_name")
+    search_fields = ("user__email", "username", "organization_name")
 
+
+# ================================
+# SellerProfile Admin
+# ================================
+class SellerProfileAdmin(admin.ModelAdmin):
+    list_display = ("user", "business_name", "gst_number", "is_approved")
+    list_filter = ("is_approved", "entity_type")
+    search_fields = ("user__email", "business_name", "gst_number")
+
+    def save_model(self, request, obj, form, change):
+        """
+        Trigger email only when seller is newly approved.
+        """
+        if change:
+            old_obj = SellerProfile.objects.get(pk=obj.pk)
+
+            # Detect approval
+            if not old_obj.is_approved and obj.is_approved:
+                # Send approval email
+              
+                send_seller_approval_email(
+                    obj.user.email,
+                    obj.temp_password
+                )
+
+                # Clear temp password after sending
+                obj.temp_password = None
+
+        super().save_model(request, obj, form, change)
+
+
+# ================================
+# ProductVariant Inline
+# ================================
 class ProductVariantInline(admin.TabularInline):
     model = ProductVariant
-    extra = 1  # how many empty rows to show
-    fields = ["variant_label", "est_price", "price", "created_at"]
-    readonly_fields = ["created_at"]
-    show_change_link = True
+    extra = 1
 
 
-@admin.register(Product)
+# ================================
+# Product Admin
+# ================================
 class ProductAdmin(admin.ModelAdmin):
-    list_display = (
-        "name",
-        "ref_no",
-        "brand",
-        "category",
-        "seller",
-        "created_at",
-        "updated_at",
-    )
-    list_filter = ("category", "seller", "brand", "created_at")
-    search_fields = ("name", "brand", "ref_no", "seller__email")
-    readonly_fields = ("created_at", "updated_at")
+    list_display = ("name", "seller", "ref_no", "category", "brand")
+    search_fields = ("name", "ref_no", "brand", "seller__email")
+    list_filter = ("category",)
     inlines = [ProductVariantInline]
 
-@admin.register(ProductVariant)
-class ProductVariantAdmin(admin.ModelAdmin):
-    list_display = ("variant_label", "product", "est_price", "price", "created_at")
-    search_fields = ("variant_label", "product__name", "product__brand")
-    list_filter = ("created_at",)
-    readonly_fields = ("created_at",)
 
-# ------------------------
-# Cart & Wishlist
-# ------------------------
-@admin.register(CartItem)
-class CartItemAdmin(admin.ModelAdmin):
-    list_display = ("user", "product", "quantity", "added_at")
-    search_fields = ("user__email", "product__product_name")
-
-
-@admin.register(WishlistItem)
-class WishlistItemAdmin(admin.ModelAdmin):
-    list_display = ("user", "product", "added_at")
-    search_fields = ("user__email", "product__product_name")
-
-
-# ------------------------
-# Orders
-# ------------------------
+# ================================
+# Order Items Inline
+# ================================
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
     extra = 0
 
 
-@admin.register(Order)
+# ================================
+# Order Admin
+# ================================
 class OrderAdmin(admin.ModelAdmin):
     list_display = ("id", "buyer", "status", "total_price", "created_at")
-    list_filter = ("status",)
+    list_filter = ("status", "created_at")
     search_fields = ("buyer__email",)
     inlines = [OrderItemInline]
 
 
-@admin.register(OrderItem)
-class OrderItemAdmin(admin.ModelAdmin):
-    list_display = ("order", "product", "quantity", "price")
-    search_fields = ("order__buyer__email", "product__product_name")
-
-
-# ------------------------
-# Notifications
-# ------------------------
-@admin.register(Notification)
-class NotificationAdmin(admin.ModelAdmin):
-    list_display = ("user", "message", "is_read", "created_at")
-    list_filter = ("is_read",)
-    search_fields = ("user__email", "message")
-
-
-# ------------------------
-# Payments
-# ------------------------
-@admin.register(Payment)
-class PaymentAdmin(admin.ModelAdmin):
-    list_display = ("order", "amount", "status", "txn_id", "paytm_order_id")
-    list_filter = ("status",)
-    search_fields = ("txn_id", "paytm_order_id")
-
-
-# ------------------------
-# Quotations
-# ------------------------
-@admin.register(QuotationRequest)
-class QuotationRequestAdmin(admin.ModelAdmin):
-    list_display = ("product", "buyer", "seller", "is_resolved", "created_at")
-    list_filter = ("is_resolved",)
-    search_fields = ("product__product_name", "buyer__email", "seller__email")
-
-
-@admin.register(Quotation)
+# ================================
+# Quotation Admin
+# ================================
 class QuotationAdmin(admin.ModelAdmin):
-    list_display = ("id", "request", "uploaded_by", "is_invoice", "created_at")
-    list_filter = ("is_invoice",)
-    search_fields = ("uploaded_by__email", "request__product__product_name")
+    list_display = ("id", "uploaded_by", "request", "is_invoice", "created_at")
+    search_fields = ("uploaded_by__email",)
 
 
-# ------------------------
-# Conversations & Messages
-# ------------------------
-@admin.register(ProductConversation)
+# ================================
+# Conversation Admin
+# ================================
+class ProductMessageInline(admin.TabularInline):
+    model = ProductMessage
+    extra = 0
+
+
 class ProductConversationAdmin(admin.ModelAdmin):
-    list_display = ("order", "product", "buyer", "seller", "created_at")
-    search_fields = ("product__product_name", "buyer__email", "seller__email")
+    list_display = ("id", "order", "product", "buyer", "seller", "created_at")
+    inlines = [ProductMessageInline]
 
 
-@admin.register(ProductMessage)
-class ProductMessageAdmin(admin.ModelAdmin):
-    list_display = ("conversation", "sender", "text", "is_read", "created_at")
-    list_filter = ("is_read",)
-    search_fields = ("sender__email", "conversation__product__product_name")
+# ================================
+# Registering ALL MODELS
+# ================================
+admin.site.register(CustomUser, CustomUserAdmin)
+admin.site.register(BuyerProfile, BuyerProfileAdmin)
+admin.site.register(SellerProfile, SellerProfileAdmin)
+admin.site.register(Product, ProductAdmin)
+admin.site.register(ProductVariant)
+admin.site.register(CartItem)
+admin.site.register(WishlistItem)
+admin.site.register(Order, OrderAdmin)
+admin.site.register(Notification)
+admin.site.register(Payment)
+admin.site.register(QuotationRequest)
+admin.site.register(Quotation, QuotationAdmin)
+admin.site.register(ProductConversation, ProductConversationAdmin)
+admin.site.register(Review)
+admin.site.register(Invoice)
+admin.site.register(PendingUser)
 
-
-# ------------------------
-# Reviews
-# ------------------------
-@admin.register(Review)
-class ReviewAdmin(admin.ModelAdmin):
-    list_display = ("product", "buyer", "rating", "created_at")
-    list_filter = ("rating",)
-    search_fields = ("product__product_name", "buyer__email")
-
-
-# ------------------------
-# Invoice
-# ------------------------
-@admin.register(Invoice)
-class InvoiceAdmin(admin.ModelAdmin):
-    list_display = (
-        "invoice_number",
-        "order",
-        "buyer",
-        "seller",
-        "subtotal",
-        "tax_amount",
-        "total_amount",
-        "status",
-        "issue_date",
-    )
-    list_filter = ("status", "issue_date")
-    search_fields = ("invoice_number", "buyer__email", "seller__email")
-
-
-# ------------------------
-# Pending Users
-# ------------------------
-@admin.register(PendingUser)
-class PendingUserAdmin(admin.ModelAdmin):
-    list_display = ("email", "name", "role", "otp", "created_at")
-    search_fields = ("email", "name")

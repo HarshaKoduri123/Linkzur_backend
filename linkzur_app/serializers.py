@@ -21,12 +21,33 @@ from .models import (
 # USER REGISTRATION
 # ==========================================================
 class RegisterSerializer(serializers.Serializer):
-    name = serializers.CharField(max_length=100)
-    phone = serializers.CharField(required=False, allow_blank=True)
+    # Common
+    role = serializers.CharField()
+    name = serializers.CharField()
+    phone = serializers.CharField()
     email = serializers.EmailField()
-    role = serializers.CharField(required=False, allow_blank=True)
-    password = serializers.CharField(write_only=True)
-    confirm_password = serializers.CharField(write_only=True)
+    password = serializers.CharField()
+    confirm_password = serializers.CharField()
+
+    # Buyer
+    username = serializers.CharField(required=False)
+    buyerCategory = serializers.CharField(required=False)
+    organizationName = serializers.CharField(required=False)
+    city = serializers.CharField(required=False)
+    state = serializers.CharField(required=False)
+    pincode = serializers.CharField(required=False)
+
+    # Seller
+    businessName = serializers.CharField(required=False)
+    entityType = serializers.CharField(required=False)
+    gstNumber = serializers.CharField(required=False)
+    panNumber = serializers.CharField(required=False)
+    sellerCategories = serializers.ListField(required=False)
+    designation = serializers.CharField(required=False)
+    addressLine1 = serializers.CharField(required=False)
+    addressLine2 = serializers.CharField(required=False)
+    websiteUrl = serializers.CharField(required=False)
+    linkedinUrl = serializers.CharField(required=False)
 
     def validate(self, data):
         if data["password"] != data["confirm_password"]:
@@ -97,10 +118,11 @@ class ProductSerializer(serializers.ModelSerializer):
 # CART & WISHLIST
 # ==========================================================
 class CartItemSerializer(serializers.ModelSerializer):
-    product = ProductSerializer(read_only=True)
+    product = serializers.SerializerMethodField()
     product_id = serializers.PrimaryKeyRelatedField(
         queryset=Product.objects.all(), source="product", write_only=True
     )
+
     variant = ProductVariantSerializer(read_only=True)
     variant_id = serializers.PrimaryKeyRelatedField(
         queryset=ProductVariant.objects.all(), source="variant", write_only=True, required=False
@@ -109,6 +131,10 @@ class CartItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = CartItem
         fields = ["id", "product", "product_id", "variant", "variant_id", "quantity", "added_at"]
+
+    def get_product(self, obj):
+        request = self.context.get("request")
+        return ProductSerializer(obj.product, context={"request": request}).data
 
 
 class WishlistItemSerializer(serializers.ModelSerializer):
@@ -145,12 +171,23 @@ class OrderSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Order
-        fields = ["id", "buyer", "status", "total_price", "created_at", "items"]
-        read_only_fields = ["buyer", "status", "total_price", "created_at"]
+        fields = [
+            "id",
+            "buyer",
+            "status",
+            "total_price",
+            "created_at",
+            "items",
+            "address",
 
+
+        ]
+        read_only_fields = ["buyer", "status", "total_price", "created_at"]
     def create(self, validated_data):
         items_data = validated_data.pop("items")
         buyer = self.context["request"].user
+
+        # Address fields remain in validated_data automatically
         order = Order.objects.create(buyer=buyer, **validated_data)
 
         total_price = 0
@@ -159,14 +196,17 @@ class OrderSerializer(serializers.ModelSerializer):
             variant = item_data.get("variant", product.variants.first())
             quantity = item_data["quantity"]
 
-            # Safe price selection (variant.price -> est_price)
             price = (variant.price or variant.est_price or 0) * quantity
+
             OrderItem.objects.create(
-                order=order, product=product, variant=variant, quantity=quantity, price=price
+                order=order,
+                product=product,
+                variant=variant,
+                quantity=quantity,
+                price=price
             )
             total_price += price
 
-            # Notify Seller
             Notification.objects.create(
                 user=product.seller,
                 message=f"Buyer {buyer.name} purchased {quantity} x {product.name}"
@@ -175,6 +215,8 @@ class OrderSerializer(serializers.ModelSerializer):
         order.total_price = total_price
         order.save()
         return order
+
+
 
 
 class OrderStatusUpdateSerializer(serializers.ModelSerializer):
@@ -219,11 +261,22 @@ class QuotationRequestSerializer(serializers.ModelSerializer):
     buyer = serializers.StringRelatedField(read_only=True)
     seller = serializers.StringRelatedField(read_only=True)
     product = ProductSerializer(read_only=True)
+    variant = ProductVariantSerializer(read_only=True)
+
+    quotation = QuotationSerializer(read_only=True)  # FULL quotation with file
 
     class Meta:
         model = QuotationRequest
-        fields = ["id", "product", "buyer", "seller", "created_at", "is_resolved"]
-        read_only_fields = ["buyer", "seller", "created_at", "is_resolved"]
+        fields = [
+            "id",
+            "product",
+            "variant",
+            "buyer",
+            "seller",
+            "created_at",
+            "is_resolved",
+            "quotation",  # 🔥 includes file_url, note, is_invoice
+        ]
 
 
 # ==========================================================

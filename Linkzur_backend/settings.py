@@ -129,12 +129,20 @@ STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'linkzur_app.CustomUser'
 
-X_FRAME_OPTIONS = 'SAMEORIGIN'
+X_FRAME_OPTIONS = "ALLOWALL"
 
 CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+
     "https://linkzur.com",
     "https://www.linkzur.com",
 ]
+
+
 
 # =============================
 # EMAIL CONFIG (Zoho SMTP)

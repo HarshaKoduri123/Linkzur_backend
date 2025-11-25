@@ -5,6 +5,8 @@ import requests
 from decimal import Decimal
 from datetime import timedelta, datetime
 from collections import defaultdict
+from django.db import transaction
+import secrets
 
 from django.conf import settings
 from django.views.decorators.csrf import csrf_exempt
@@ -25,7 +27,8 @@ from rest_framework import status
 from .models import (
     CustomUser, Product, ProductVariant, CartItem, WishlistItem, Order,
     OrderItem, Notification, Payment, Quotation,
-    ProductConversation, ProductMessage, QuotationRequest, Review, Invoice, PendingUser
+    ProductConversation, ProductMessage, QuotationRequest, 
+    Review, Invoice, PendingUser,BuyerProfile, SellerProfile
 )
 from .serializers import (
     RegisterSerializer, ProductSerializer, CartItemSerializer,
@@ -52,62 +55,344 @@ def index(request):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
-def register_user(request):
-    serializer = RegisterSerializer(data=request.data)
-    if not serializer.is_valid():
-        return Response(serializer.errors, status=400)
-    data = serializer.validated_data
+def register_buyer(request):
+    """
+    Step 1: Buyer submits basic details.
+    Save to PendingUser + send OTP.
+    """
+    data = request.data
+    print(data)
+
+    serializer = RegisterSerializer(data=data)
+    serializer.is_valid(raise_exception=True)
+
+    name = data["name"]
+    phone = data["phone"]
+    email = data["email"]
+    password = data["password"]
+    role = "buyer"
+
+    # Generate OTP
     otp = generate_otp()
+
+    # Create or update pending user
     PendingUser.objects.update_or_create(
-        email=data["email"],
+        email=email,
         defaults={
-            "name": data["name"],
-            "phone": data.get("phone", ""),
-            "role": data.get("role", ""),
-            "password": data["password"],
+            "name": name,
+            "phone": phone,
+            "role": role,
+            "password": password,
             "otp": otp,
         },
     )
-    send_otp_email(data["email"], otp)
-    return Response({"message": "OTP sent to your email."})
+
+    # Send OTP
+    send_otp_email(email, otp)
+
+    return Response({"message": "OTP sent to your email"}, status=200)
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def register_seller(request):
+    """
+    Seller registration — NO OTP. 
+    Creates CustomUser + SellerProfile (pending approval).
+    """
+    data = request.data
+
+    # Validate required fields
+    required_fields = [
+        "name", "phone", "email",
+        "businessName", "entityType",
+        "gstNumber", "panNumber",
+        "addressLine1", "city", "state", "pincode",
+    ]
+
+    for field in required_fields:
+        if not data.get(field):
+            return Response({"error": f"{field} is required"}, status=400)
+    
+    temporary_password = secrets.token_urlsafe(10)  # random secure password
+   
+    user = CustomUser.objects.create_user(
+        email=data["email"],
+        name=data["name"],
+        phone=data["phone"],
+        role="seller",
+        password=temporary_password,
+    )
+
+    # Create Seller Profile
+    profile = SellerProfile.objects.create(
+        user=user,
+        business_name=data.get("businessName"),
+        entity_type=data.get("entityType"),
+        gst_number=data.get("gstNumber"),
+        pan_number=data.get("panNumber"),
+
+        seller_categories=data.get("sellerCategories", []),
+        designation=data.get("designation"),
+        website_url=data.get("websiteUrl"),
+        linkedin_url=data.get("linkedinUrl"),
+
+        temp_password=temporary_password,
+
+
+        address_line1=data.get("addressLine1"),
+        address_line2=data.get("addressLine2"),
+        city=data.get("city"),
+        state=data.get("state"),
+        pincode=data.get("pincode"),
+
+        is_approved=False,
+    )
+
+    # Handle optional file uploads
+    if "businessRegDoc" in request.FILES:
+        profile.business_document = request.FILES["businessRegDoc"]
+
+    if "gstCertificate" in request.FILES:
+        profile.gst_certificate = request.FILES["gstCertificate"]
+
+    profile.save()
+
+    return Response(
+        {"message": "Seller registered. Awaiting admin approval."},
+        status=201,
+    )
+
+
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def verify_otp_register(request):
     serializer = VerifyOTPSerializer(data=request.data)
-    if not serializer.is_valid():
-        return Response(serializer.errors, status=400)
+    serializer.is_valid(raise_exception=True)
+
     email = serializer.validated_data["email"]
     otp = serializer.validated_data["otp"]
+    print(request.data)
+
     try:
-        pending = PendingUser.objects.get(email=email, otp=otp)
+        pending = PendingUser.objects.get(email=email)
     except PendingUser.DoesNotExist:
-        return Response({"error": "Invalid OTP or email"}, status=400)
+        return Response({"error": "Invalid email"}, status=400)
+
+    if pending.otp != otp:
+        return Response({"error": "Incorrect OTP"}, status=400)
+
     if not pending.is_valid():
         pending.delete()
-        return Response({"error": "OTP expired, please register again"}, status=400)
-    user = User.objects.create_user(
+        return Response({"error": "OTP expired"}, status=400)
+
+    # Create final buyer user
+ 
+
+    user = CustomUser.objects.create_user(
+        email=pending.email,
         name=pending.name,
         phone=pending.phone,
-        email=pending.email,
-        role=pending.role,
+        role="buyer",
         password=pending.password,
     )
+    
+
+    BuyerProfile.objects.create(
+        user=user,
+        username=request.data.get("username"),
+        buyer_category=request.data.get("buyerCategory"),
+        organization_name=request.data.get("organizationName"),
+        city=request.data.get("city"),
+        state=request.data.get("state"),
+        pincode=request.data.get("pincode"),
+    )
+
     pending.delete()
-    return Response({"message": "Registration successful, please login."}, status=201)
+    return Response({"message": "Registration successful"}, status=201)
+
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def user_profile(request):
-    u = request.user
-    return Response({
-        "id": u.id,
-        "name": u.name,
-        "email": u.email,
-        "phone": u.phone,
-        "role": u.role
-    })
+    user = request.user
 
+    base_data = {
+        "name": user.name,
+        "email": user.email,
+        "phone": user.phone,
+        "role": user.role,
+    }
+
+    # --------------------
+    # BUYER PROFILE
+    # --------------------
+    if user.role == "buyer":
+        try:
+            bp = user.buyer_profile
+            base_data.update({
+                "username": bp.username,
+                "buyerCategory": bp.buyer_category,
+                "organizationName": bp.organization_name,
+                "city": bp.city,
+                "state": bp.state,
+                "pincode": bp.pincode,
+            })
+        except BuyerProfile.DoesNotExist:
+            pass
+
+    # --------------------
+    # SELLER PROFILE
+    # --------------------
+    elif user.role == "seller":
+        try:
+            sp = user.seller_profile
+            base_data.update({
+                "businessName": sp.business_name,
+                "entityType": sp.entity_type,
+                "gstNumber": sp.gst_number,
+                "panNumber": sp.pan_number,
+                "sellerCategories": sp.seller_categories,
+                "designation": sp.designation,
+                "websiteUrl": sp.website_url,
+                "linkedinUrl": sp.linkedin_url,
+                "addressLine1": sp.address_line1,
+                "addressLine2": sp.address_line2,
+                "city": sp.city,
+                "state": sp.state,
+                "pincode": sp.pincode,
+            })
+        except SellerProfile.DoesNotExist:
+            pass
+
+    return Response(base_data)
+
+
+@api_view(["PUT", "PATCH"])
+@permission_classes([IsAuthenticated])
+@parser_classes([JSONParser, MultiPartParser, FormParser])   # ⭐ FIX: ALLOW ALL TYPES
+def update_user_profile(request):
+    user: CustomUser = request.user
+    data = request.data
+
+    # ------------------------------------------
+    # UPDATE COMMON USER FIELDS
+    # ------------------------------------------
+    user.name = data.get("name", user.name)
+    user.phone = data.get("phone", user.phone)
+
+    new_email = data.get("email")
+    if new_email and new_email != user.email:
+        if CustomUser.objects.filter(email=new_email).exclude(id=user.id).exists():
+            return Response({"error": "Email already in use."}, status=400)
+        user.email = new_email
+
+    user.save()
+
+    # ------------------------------------------
+    # BUYER UPDATE
+    # ------------------------------------------
+    if user.role == "buyer":
+        profile = BuyerProfile.objects.get(user=user)
+
+        profile.username = data.get("username", profile.username)
+        profile.buyer_category = data.get("buyerCategory", profile.buyer_category)
+        profile.organization_name = data.get("organizationName", profile.organization_name)
+        profile.city = data.get("city", profile.city)
+        profile.state = data.get("state", profile.state)
+        profile.pincode = data.get("pincode", profile.pincode)
+
+        profile.save()
+
+        return Response(
+            {
+                "message": "Buyer profile updated successfully.",
+                "user": {
+                    "name": user.name,
+                    "email": user.email,
+                    "phone": user.phone,
+                    "role": user.role,
+                },
+                "buyer_profile": {
+                    "username": profile.username,
+                    "buyerCategory": profile.buyer_category,
+                    "organizationName": profile.organization_name,
+                    "city": profile.city,
+                    "state": profile.state,
+                    "pincode": profile.pincode,
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    # ------------------------------------------
+    # SELLER UPDATE
+    # ------------------------------------------
+    if user.role == "seller":
+        profile = SellerProfile.objects.get(user=user)
+
+        profile.business_name = data.get("businessName", profile.business_name)
+        profile.entity_type = data.get("entityType", profile.entity_type)
+        profile.gst_number = data.get("gstNumber", profile.gst_number)
+        profile.pan_number = data.get("panNumber", profile.pan_number)
+
+        profile.designation = data.get("designation", profile.designation)
+        profile.website_url = data.get("websiteUrl", profile.website_url)
+        profile.linkedin_url = data.get("linkedinUrl", profile.linkedin_url)
+
+        profile.address_line1 = data.get("addressLine1", profile.address_line1)
+        profile.address_line2 = data.get("addressLine2", profile.address_line2)
+        profile.city = data.get("city", profile.city)
+        profile.state = data.get("state", profile.state)
+        profile.pincode = data.get("pincode", profile.pincode)
+
+        # Seller categories (JSON or multiple form fields)
+        if "sellerCategories" in data:
+            if isinstance(data.get("sellerCategories"), list):
+                profile.seller_categories = data.get("sellerCategories")
+            else:
+                profile.seller_categories = data.getlist("sellerCategories")
+
+        # File uploads
+        if "businessRegDoc" in request.FILES:
+            profile.business_document = request.FILES["businessRegDoc"]
+
+        if "gstCertificate" in request.FILES:
+            profile.gst_certificate = request.FILES["gstCertificate"]
+
+        profile.save()
+
+        return Response(
+            {
+                "message": "Seller profile updated successfully.",
+                "user": {
+                    "name": user.name,
+                    "email": user.email,
+                    "phone": user.phone,
+                    "role": user.role,
+                },
+                "seller_profile": {
+                    "businessName": profile.business_name,
+                    "entityType": profile.entity_type,
+                    "gstNumber": profile.gst_number,
+                    "panNumber": profile.pan_number,
+                    "designation": profile.designation,
+                    "websiteUrl": profile.website_url,
+                    "linkedinUrl": profile.linkedin_url,
+                    "addressLine1": profile.address_line1,
+                    "addressLine2": profile.address_line2,
+                    "city": profile.city,
+                    "state": profile.state,
+                    "pincode": profile.pincode,
+                    "sellerCategories": profile.seller_categories,
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    return Response({"error": "Invalid user role."}, status=400)
+
+    
 # ==========================================================
 # PRODUCT ENDPOINTS (variant-aware)
 # ==========================================================
@@ -335,10 +620,10 @@ def view_wishlist(request):
 @permission_classes([IsAuthenticated])
 def add_to_wishlist(request):
     product_id = request.data.get("product")
-    variant_id = request.data.get("variant_id")
+   
     product = get_object_or_404(Product, pk=product_id)
-    variant = get_object_or_404(ProductVariant, pk=variant_id, product=product)
-    obj, created = WishlistItem.objects.get_or_create(user=request.user, product=product, variant=variant)
+ 
+    obj, created = WishlistItem.objects.get_or_create(user=request.user, product=product)
     if not created:
         return Response({"detail": "Already in wishlist"})
     return Response(WishlistItemSerializer(obj).data, status=201)
@@ -411,16 +696,24 @@ def place_order(request):
         subtotal=subtotal,
         tax_amount=tax,
         total_amount=total,
+        address=order.address,
     )
 
     pdf = generate_invoice_pdf(invoice)
     invoice.pdf_file.save(f"{invoice.invoice_number}.pdf", pdf)
     invoice.save()
 
+    # =============================
+    # CLEAR USER CART AFTER ORDER
+    # =============================
+    CartItem.objects.filter(user=request.user).delete()
+
     return Response({
         "order": OrderSerializer(order).data,
         "invoice": InvoiceSerializer(invoice, context={"request": request}).data,
     }, status=201)
+
+
 
 
 @api_view(["GET"])
@@ -563,98 +856,98 @@ def mark_notification_read(request, pk):
         return Response({"detail": "Not found"}, status=404)
 
 
-# ==========================================================
-# PAYTM PAYMENT ENDPOINTS
-# ==========================================================
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def initiate_paytm_payment(request, order_id):
-    """
-    Initiate Paytm payment and generate transaction token.
-    """
-    try:
-        order = Order.objects.get(id=order_id, buyer=request.user)
-    except Order.DoesNotExist:
-        return Response({"detail": "Order not found"}, status=404)
+# # ==========================================================
+# # PAYTM PAYMENT ENDPOINTS
+# # ==========================================================
+# @api_view(["POST"])
+# @permission_classes([IsAuthenticated])
+# def initiate_paytm_payment(request, order_id):
+#     """
+#     Initiate Paytm payment and generate transaction token.
+#     """
+#     try:
+#         order = Order.objects.get(id=order_id, buyer=request.user)
+#     except Order.DoesNotExist:
+#         return Response({"detail": "Order not found"}, status=404)
 
-    unique_order_id = f"{order.id}_{int(time.time())}"
+#     unique_order_id = f"{order.id}_{int(time.time())}"
 
-    body = {
-        "requestType": "Payment",
-        "mid": PAYTM_MID,
-        "websiteName": "WEBSTAGING",
-        "orderId": unique_order_id,
-        "callbackUrl": "http://localhost:8000/api/paytm/callback/",
-        "txnAmount": {"value": f"{order.total_price:.2f}", "currency": "INR"},
-        "userInfo": {"custId": str(request.user.id)},
-    }
+#     body = {
+#         "requestType": "Payment",
+#         "mid": PAYTM_MID,
+#         "websiteName": "WEBSTAGING",
+#         "orderId": unique_order_id,
+#         "callbackUrl": "http://localhost:8000/api/paytm/callback/",
+#         "txnAmount": {"value": f"{order.total_price:.2f}", "currency": "INR"},
+#         "userInfo": {"custId": str(request.user.id)},
+#     }
 
-    checksum = generate_checksum(body)
-    payload = {"body": body, "head": {"signature": checksum}}
-    url = f"{PAYTM_INITIATE_URL}?mid={PAYTM_MID}&orderId={unique_order_id}"
+#     checksum = generate_checksum(body)
+#     payload = {"body": body, "head": {"signature": checksum}}
+#     url = f"{PAYTM_INITIATE_URL}?mid={PAYTM_MID}&orderId={unique_order_id}"
 
-    try:
-        response = requests.post(url, json=payload, timeout=15)
-        data = response.json()
-    except Exception as e:
-        return Response({"detail": f"Paytm error: {e}"}, status=500)
+#     try:
+#         response = requests.post(url, json=payload, timeout=15)
+#         data = response.json()
+#     except Exception as e:
+#         return Response({"detail": f"Paytm error: {e}"}, status=500)
 
-    if "body" in data and "txnToken" in data["body"]:
-        Payment.objects.create(
-            order=order,
-            amount=order.total_price,
-            status="pending",
-            paytm_order_id=unique_order_id
-        )
-        return Response({
-            "txnToken": data["body"]["txnToken"],
-            "orderId": unique_order_id
-        })
-    return Response(data, status=400)
+#     if "body" in data and "txnToken" in data["body"]:
+#         Payment.objects.create(
+#             order=order,
+#             amount=order.total_price,
+#             status="pending",
+#             paytm_order_id=unique_order_id
+#         )
+#         return Response({
+#             "txnToken": data["body"]["txnToken"],
+#             "orderId": unique_order_id
+#         })
+#     return Response(data, status=400)
 
 
-@csrf_exempt
-@api_view(["POST"])
-@permission_classes([AllowAny])
-@renderer_classes([JSONRenderer])
-def payment_callback(request):
-    """
-    Handles Paytm's callback and updates payment/order status.
-    """
-    data = request.POST.dict()
-    paytm_order_id = data.get("ORDERID")
-    checksum = data.get("CHECKSUMHASH")
+# @csrf_exempt
+# @api_view(["POST"])
+# @permission_classes([AllowAny])
+# @renderer_classes([JSONRenderer])
+# def payment_callback(request):
+#     """
+#     Handles Paytm's callback and updates payment/order status.
+#     """
+#     data = request.POST.dict()
+#     paytm_order_id = data.get("ORDERID")
+#     checksum = data.get("CHECKSUMHASH")
 
-    if not paytm_order_id or not checksum:
-        return Response({"status": "failed", "detail": "Invalid callback data"}, status=400)
+#     if not paytm_order_id or not checksum:
+#         return Response({"status": "failed", "detail": "Invalid callback data"}, status=400)
 
-    if not verify_checksum(data, checksum):
-        return Response({"status": "failed", "detail": "Checksum mismatch"}, status=400)
+#     if not verify_checksum(data, checksum):
+#         return Response({"status": "failed", "detail": "Checksum mismatch"}, status=400)
 
-    try:
-        payment = Payment.objects.get(paytm_order_id=paytm_order_id)
-        order = payment.order
-    except Payment.DoesNotExist:
-        return Response({"status": "failed", "detail": "Payment not found"}, status=404)
+#     try:
+#         payment = Payment.objects.get(paytm_order_id=paytm_order_id)
+#         order = payment.order
+#     except Payment.DoesNotExist:
+#         return Response({"status": "failed", "detail": "Payment not found"}, status=404)
 
-    txn_status = data.get("STATUS")
-    txn_id = data.get("TXNID")
+#     txn_status = data.get("STATUS")
+#     txn_id = data.get("TXNID")
 
-    if txn_id:
-        payment.txn_id = txn_id
+#     if txn_id:
+#         payment.txn_id = txn_id
 
-    payment.status = "success" if txn_status == "TXN_SUCCESS" else "failed"
-    payment.save()
+#     payment.status = "success" if txn_status == "TXN_SUCCESS" else "failed"
+#     payment.save()
 
-    order.status = "processing" if payment.status == "success" else "pending"
-    order.save()
+#     order.status = "processing" if payment.status == "success" else "pending"
+#     order.save()
 
-    Notification.objects.create(
-        user=order.buyer,
-        message=f"Payment for order #{order.id} {'succeeded' if payment.status == 'success' else 'failed'}."
-    )
+#     Notification.objects.create(
+#         user=order.buyer,
+#         message=f"Payment for order #{order.id} {'succeeded' if payment.status == 'success' else 'failed'}."
+#     )
 
-    return Response({"status": payment.status})
+#     return Response({"status": payment.status})
 
 # ==========================================================
 # QUOTATIONS (pre-order and post-order)
@@ -712,26 +1005,43 @@ def list_order_quotations(request, order_id):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
-def request_quotation_preorder(request, product_id):
+def request_quotation_preproduct(request, product_id):
     """
-    Buyer requests a quotation for a product before placing an order.
+    Buyer requests a quotation for a product or product+variant before ordering.
     """
+
+    
     product = get_object_or_404(Product, pk=product_id)
     seller = product.seller
+    
+
 
     if request.user.role != "buyer":
         return Response({"detail": "Only buyers can request quotations."}, status=403)
 
+ 
+
+    # --- Get variant if provided ---
+    variant_id = request.data.get("variant_id")
+    variant = None
+    if variant_id:
+        variant = get_object_or_404(ProductVariant, pk=variant_id, product=product)
+ 
+
+    # --- Prevent duplicate requests ---
     req, created = QuotationRequest.objects.get_or_create(
         product=product,
+        variant=variant,
         buyer=request.user,
         seller=seller
     )
 
+    # --- Notify seller only when new ---
     if created:
+        variant_text = f" (Variant: {variant.variant_label})" if variant else ""
         Notification.objects.create(
             user=seller,
-            message=f"Buyer {request.user.name} requested a quotation for {product.name}."
+            message=f"Buyer {request.user.name} requested a quotation for {product.name}{variant_text}."
         )
 
     serializer = QuotationRequestSerializer(req, context={"request": request})
@@ -741,15 +1051,19 @@ def request_quotation_preorder(request, product_id):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def list_my_quotation_requests(request):
-    """
-    Buyers → view their quotation requests  
-    Sellers → view received quotation requests
-    """
     if request.user.role == "buyer":
-        qs = QuotationRequest.objects.filter(buyer=request.user).select_related("product", "seller")
+        qs = (
+            QuotationRequest.objects.filter(buyer=request.user)
+            .select_related("product", "variant", "seller", "quotation")
+        )
     else:
-        qs = QuotationRequest.objects.filter(seller=request.user).select_related("product", "buyer")
-    return Response(QuotationRequestSerializer(qs, many=True, context={"request": request}).data)
+        qs = (
+            QuotationRequest.objects.filter(seller=request.user)
+            .select_related("product", "variant", "buyer", "quotation")
+        )
+
+    serializer = QuotationRequestSerializer(qs, many=True, context={"request": request})
+    return Response(serializer.data)
 
 
 @api_view(["POST"])

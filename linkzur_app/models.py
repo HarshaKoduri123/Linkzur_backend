@@ -4,22 +4,47 @@ from django.conf import settings
 from django.core.validators import FileExtensionValidator
 from django.utils import timezone
 from datetime import timedelta
+from django.db import models
+from django.conf import settings
+from django.db.models import JSONField
+
+CATEGORIES = [
+    ("chemicals", "Chemicals"),
+    ("instruments", "Instruments"),
+    ("consumables", "Consumables"),
+    ("ppe", "PPE"),
+    ("edevices", "E-Devices"),
+    ("glassware", "Glassware"),
+    ("biologics", "Biologics"),
+    ("solvents", "Solvents"),
+    ("books_stationery", "Books & Stationery"),
+    ("furniture", "Furniture"),
+]
 
 
-# ------------------------
-# Custom User
-# ------------------------
+# ============================
+# Custom User Model
+# ============================
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, name, phone, role, password=None):
         if not email:
-            raise ValueError("Users must have an email address")
+            raise ValueError("Email required")
+
         email = self.normalize_email(email)
-        user = self.model(email=email, name=name, phone=phone, role=role)
+        user = self.model(
+            email=email,
+            name=name,
+            phone=phone,
+            role=role
+        )
         user.set_password(password)
         user.save(using=self._db)
+
         return user
 
-    def create_superuser(self, email, name, phone, role='buyer', password=None):
+    def create_superuser(
+        self, email, name="Admin", phone="0000", role="buyer", password=None
+    ):
         user = self.create_user(email, name, phone, role, password)
         user.is_staff = True
         user.is_superuser = True
@@ -28,34 +53,105 @@ class CustomUserManager(BaseUserManager):
 
 
 class CustomUser(AbstractBaseUser, PermissionsMixin):
-    USER_TYPE_CHOICES = (('buyer', 'Buyer'), ('seller', 'Seller'))
+    USER_TYPE_CHOICES = (
+        ("buyer", "Buyer"),
+        ("seller", "Seller"),
+    )
 
     email = models.EmailField(unique=True)
     name = models.CharField(max_length=255)
     phone = models.CharField(max_length=15)
     role = models.CharField(max_length=10, choices=USER_TYPE_CHOICES)
+
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
 
-    objects = CustomUserManager()
+    USERNAME_FIELD = "email"
+    REQUIRED_FIELDS = ["name", "phone", "role"]
 
-    USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['name', 'phone', 'role']
+    objects = CustomUserManager()
 
     def __str__(self):
         return self.email
 
 
-from django.db import models
-from django.conf import settings
+# ============================
+# Buyer Profile
+# ============================
+class BuyerProfile(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="buyer_profile"
+    )
+
+    username = models.CharField(max_length=100)
+    buyer_category = models.CharField(max_length=100)
+    organization_name = models.CharField(max_length=255)
+    city = models.CharField(max_length=100)
+    state = models.CharField(max_length=100)
+    pincode = models.CharField(max_length=20)
+
+    def __str__(self):
+        return f"BuyerProfile: {self.user.email}"
+
+
+# ============================
+# Seller Profile
+# ============================
+class SellerProfile(models.Model):
+    ENTITY_TYPES = (
+        ("Proprietorship", "Proprietorship"),
+        ("Partnership", "Partnership"),
+        ("Private Limited", "Private Limited"),
+        ("Public Limited", "Public Limited"),
+        ("LLP", "LLP"),
+        ("Other", "Other"),
+    )
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="seller_profile"
+    )
+
+    business_name = models.CharField(max_length=255)
+    entity_type = models.CharField(max_length=50, choices=ENTITY_TYPES)
+    gst_number = models.CharField(max_length=20)
+    pan_number = models.CharField(max_length=20)
+
+    temp_password = models.CharField(max_length=128, null=True, blank=True)
+
+
+    business_document = models.FileField(
+        upload_to="seller_documents/",
+        validators=[FileExtensionValidator(["pdf", "jpg", "jpeg", "png"])],
+        null=True, blank=True
+    )
+
+    gst_certificate = models.FileField(
+        upload_to="seller_gst_docs/",
+        validators=[FileExtensionValidator(["pdf", "jpg", "jpeg", "png"])],
+        null=True, blank=True
+    )
+
+    seller_categories = JSONField(default=list)
+
+    designation = models.CharField(max_length=100, blank=True, null=True)
+    website_url = models.URLField(blank=True, null=True)
+    linkedin_url = models.URLField(blank=True, null=True)
+
+    address_line1 = models.CharField(max_length=255)
+    address_line2 = models.CharField(max_length=255, blank=True, null=True)
+    city = models.CharField(max_length=100)
+    state = models.CharField(max_length=100)
+    pincode = models.CharField(max_length=20)
+
+    is_approved = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"SellerProfile: {self.user.email}"
+
 
 
 class Product(models.Model):
-    CATEGORY_CHOICES = (
-        ('chemicals', 'Chemicals'),
-        ('instruments', 'Instruments'),
-        ('biologists', 'Biologists'),
-    )
+    CATEGORY_CHOICES = CATEGORIES
 
     seller = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -63,22 +159,24 @@ class Product(models.Model):
         related_name="products"
     )
 
-    # --- Main fields ---
-    name = models.CharField(max_length=255)  
-    ref_no = models.CharField(max_length=100, unique=True)  # ✅ required
+    name = models.CharField(max_length=255)
+    ref_no = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True, null=True)
-    category = models.CharField(max_length=50, choices=CATEGORY_CHOICES)  # ✅ required
+    category = models.CharField(max_length=50, choices=CATEGORY_CHOICES)
     hsn = models.CharField(max_length=20, blank=True, null=True)
-    discount = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True) #changes based on seller
-    brand = models.CharField(max_length=255)  
+    discount = models.DecimalField(
+        max_digits=5, decimal_places=2, blank=True, null=True
+    )
+    brand = models.CharField(max_length=255)
     cas_no = models.CharField(max_length=50, blank=True, null=True)
     image = models.ImageField(upload_to="product_images/", null=True, blank=True)
 
-    created_at = models.DateTimeField(auto_now_add=True)  
-    updated_at = models.DateTimeField(auto_now=True)      
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f"{self.name} ({self.seller.email})"
+
 
 
 # -----------------------------------------------------
@@ -134,6 +232,8 @@ class WishlistItem(models.Model):
 # ------------------------
 # Orders
 # ------------------------
+# linkzur_app/models.py
+
 class Order(models.Model):
     STATUS_CHOICES = [
         ("pending", "Pending"),
@@ -144,6 +244,12 @@ class Order(models.Model):
     ]
 
     buyer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="orders")
+
+    # NEW — Full formatted address from Google Places
+    address = models.TextField(blank=True, null=True)
+
+  
+
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
     total_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -198,20 +304,26 @@ class Payment(models.Model):
 # QuotationRequest (pre-order)
 # ------------------------
 class QuotationRequest(models.Model):
-    """
-    Buyer can request quotation for a product before placing an order.
-    """
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="quotation_requests")
+    variant = models.ForeignKey(
+        ProductVariant,
+        on_delete=models.CASCADE,
+        related_name="quotation_requests",
+        null=True,
+        blank=True
+    )
     buyer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="sent_quotation_requests")
     seller = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="received_quotation_requests")
+
     created_at = models.DateTimeField(auto_now_add=True)
     is_resolved = models.BooleanField(default=False)
 
     class Meta:
-        unique_together = ("product", "buyer", "seller")
+        unique_together = ("product", "variant", "buyer", "seller")
 
     def __str__(self):
-        return f"QuotationRequest: {self.product.name} by {self.buyer.email}"
+        var = f" ({self.variant.variant_label})" if self.variant else ""
+        return f"QuotationRequest: {self.product.name}{var} by {self.buyer.email}"
 
 
 # ------------------------
@@ -309,7 +421,7 @@ class Invoice(models.Model):
     order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name="invoice")
     buyer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="buyer_invoices")
     seller = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="seller_invoices")
-
+    address = models.TextField(blank=True, null=True)
     issue_date = models.DateField(auto_now_add=True)
     subtotal = models.DecimalField(max_digits=10, decimal_places=2)
     tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
@@ -338,6 +450,7 @@ class PendingUser(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def is_valid(self):
+        
         return timezone.now() < self.created_at + timedelta(minutes=5)
 
     def __str__(self):
