@@ -59,9 +59,12 @@ def send_otp_email(email: str, otp: str) -> bool:
 # ============================================
 def send_seller_approval_email(email: str, temp_password: str) -> bool:
     """
-    Sends a seller approval email with temporary password.
+    Sends a seller approval email with temporary password + reset password link.
     Returns True if successful, else False.
     """
+
+    reset_link = "https://www.linkzur.com/reset-password"  # 🔥 Update this!
+
     subject = "Your Seller Account Has Been Approved – Linkzur"
 
     message = (
@@ -70,12 +73,12 @@ def send_seller_approval_email(email: str, temp_password: str) -> bool:
         f"Your login details:\n"
         f"Email: {email}\n"
         f"Temporary Password: {temp_password}\n\n"
-        f"For security, please log in and change your password immediately.\n\n"
+        f"For security, please log in and change your password immediately.\n"
+        f"You can reset your password anytime here:\n{reset_link}\n\n"
         f"We’re excited to have you onboard!\n\n"
         f"Best regards,\n"
         f"Linkzur Team"
     )
-    
 
     try:
         send_mail(
@@ -85,7 +88,7 @@ def send_seller_approval_email(email: str, temp_password: str) -> bool:
             [email],
             fail_silently=False,
         )
-        print("hii")
+
         logger.info(f"📨 Seller approval email sent to {email}")
         return True
 
@@ -135,3 +138,66 @@ def send_seller_reject_email(email: str) -> bool:
         logger.error(f"❌ Failed to send rejection email to {email}: {e}")
         return False
 
+def send_password_reset_email(email: str, code: str) -> bool:
+    subject = "Linkzur – Password Reset Code"
+    message = (
+        f"Hello,\n\n"
+        f"We received a password reset request for your Linkzur account.\n\n"
+        f"Your reset code is: {code}\n"
+        f"This code is valid for 10 minutes.\n\n"
+        f"If you didn't request this, ignore this email.\n\n"
+        f"Best regards,\n"
+        f"Linkzur Team"
+    )
+
+    try:
+        send_mail(
+            subject,
+            message,
+            settings.DEFAULT_FROM_EMAIL,
+            [email],
+            fail_silently=False,
+        )
+        logger.info(f"🔐 Password reset email sent to {email}")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Could not send reset email: {e}")
+        return False
+
+
+def send_delivery_otp_email(email: str, otp: str) -> bool:
+    """
+    Sends a delivery confirmation OTP to the buyer.
+    OTP will be used by the seller to verify delivery.
+    Valid for 1 hour.
+    """
+    subject = "Linkzur – Delivery Confirmation OTP"
+
+    message = (
+        f"Hello,\n\n"
+        f"Your delivery confirmation OTP for your Linkzur order is: {otp}\n"
+        f"This OTP is valid for 1 hour.\n\n"
+        f"Share this code only with the delivery agent.\n\n"
+        f"If you did not expect a delivery, please contact Linkzur support immediately.\n\n"
+        f"Best regards,\n"
+        f"Linkzur Team"
+    )
+
+    try:
+        send_mail(
+            subject,
+            message,
+            settings.DEFAULT_FROM_EMAIL,
+            [email],
+            fail_silently=False,
+        )
+        logger.info(f"📩 Delivery OTP sent to {email}")
+        return True
+
+    except BadHeaderError:
+        logger.error(f"❌ Invalid header sending delivery OTP to {email}")
+        return False
+
+    except Exception as e:
+        logger.error(f"❌ Failed to send delivery OTP to {email}: {e}")
+        return False

@@ -79,7 +79,7 @@ class ProductSerializer(serializers.ModelSerializer):
         model = Product
         fields = [
             "id", "name", "ref_no", "description", "category", "hsn",
-            "discount", "brand", "cas_no", "image", "seller",
+            "discount", "brand", "cas_no", "image", "seller", "gst",
             "created_at", "updated_at", "average_rating", "total_reviews", "variants",
         ]
         read_only_fields = ["created_at", "updated_at", "seller"]
@@ -151,6 +151,28 @@ class WishlistItemSerializer(serializers.ModelSerializer):
 # ==========================================================
 # ORDERS
 # ==========================================================
+class InvoiceSerializer(serializers.ModelSerializer):
+    buyer_email = serializers.EmailField(source="buyer.email", read_only=True)
+    seller_email = serializers.EmailField(source="seller.email", read_only=True)
+
+    class Meta:
+        model = Invoice
+        fields = [
+            "id",
+            "invoice_number",
+            "order_id",
+            "buyer_email",
+            "seller_email",
+            "subtotal",
+            "tax_amount",
+            "total_amount",
+            "status",
+            "issue_date",
+            "pdf_file",
+        ]
+
+
+
 class OrderItemSerializer(serializers.ModelSerializer):
     product = ProductSerializer(read_only=True)
     variant = ProductVariantSerializer(read_only=True) 
@@ -165,9 +187,9 @@ class OrderItemSerializer(serializers.ModelSerializer):
         model = OrderItem
         fields = ["id", "product", "variant", "product_id", "variant_id", "quantity", "price"]
 
-
 class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True)
+    invoice = InvoiceSerializer(read_only=True)
 
     class Meta:
         model = Order
@@ -179,15 +201,15 @@ class OrderSerializer(serializers.ModelSerializer):
             "created_at",
             "items",
             "address",
-
-
+            "invoice",
         ]
         read_only_fields = ["buyer", "status", "total_price", "created_at"]
+
+
     def create(self, validated_data):
         items_data = validated_data.pop("items")
         buyer = self.context["request"].user
 
-        # Address fields remain in validated_data automatically
         order = Order.objects.create(buyer=buyer, **validated_data)
 
         total_price = 0
@@ -205,6 +227,7 @@ class OrderSerializer(serializers.ModelSerializer):
                 quantity=quantity,
                 price=price
             )
+
             total_price += price
 
             Notification.objects.create(
@@ -326,19 +349,4 @@ class ReviewSerializer(serializers.ModelSerializer):
         read_only_fields = ["buyer", "created_at"]
 
 
-# ==========================================================
-# INVOICE
-# ==========================================================
-class InvoiceSerializer(serializers.ModelSerializer):
-    order_id = serializers.IntegerField(source="order.id", read_only=True)
-    buyer_email = serializers.EmailField(source="buyer.email", read_only=True)
-    seller_email = serializers.EmailField(source="seller.email", read_only=True)
-
-    class Meta:
-        model = Invoice
-        fields = [
-            "id", "invoice_number", "order_id", "buyer_email", "seller_email",
-            "subtotal", "tax_amount", "total_amount", "status",
-            "issue_date", "pdf_file",
-        ]
 

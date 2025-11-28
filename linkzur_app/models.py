@@ -93,6 +93,44 @@ class BuyerProfile(models.Model):
     def __str__(self):
         return f"BuyerProfile: {self.user.email}"
 
+class ShippingAddress(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="shipping_addresses"
+    )
+
+    name = models.CharField(max_length=255)
+    phone = models.CharField(max_length=20)
+    address_line1 = models.CharField(max_length=255)
+    address_line2 = models.CharField(max_length=255, blank=True, null=True)
+    city = models.CharField(max_length=100)
+    state = models.CharField(max_length=100)
+    pincode = models.CharField(max_length=20)
+    is_default = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.name} - {self.city} ({'Default' if self.is_default else 'Other'})"
+
+
+class BillingAddress(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="billing_address"
+    )
+
+    name = models.CharField(max_length=255)
+    phone = models.CharField(max_length=20)
+    address_line1 = models.CharField(max_length=255)
+    address_line2 = models.CharField(max_length=255, blank=True, null=True)
+    city = models.CharField(max_length=100)
+    state = models.CharField(max_length=100)
+    pincode = models.CharField(max_length=20)
+
+    def __str__(self):
+        return f"BillingAddress({self.user.email})"
+
 
 # ============================
 # Seller Profile
@@ -149,6 +187,21 @@ class SellerProfile(models.Model):
         return f"SellerProfile: {self.user.email}"
 
 
+class PasswordResetToken(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="password_reset_tokens"
+    )
+    token = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def is_valid(self):
+        return timezone.now() < self.created_at + timedelta(minutes=10)
+
+    def __str__(self):
+        return f"PasswordResetToken({self.user.email})"
+
 
 class Product(models.Model):
     CATEGORY_CHOICES = CATEGORIES
@@ -167,6 +220,8 @@ class Product(models.Model):
     discount = models.DecimalField(
         max_digits=5, decimal_places=2, blank=True, null=True
     )
+    gst = models.DecimalField(max_digits=5, decimal_places=2, default=0)  
+
     brand = models.CharField(max_length=255)
     cas_no = models.CharField(max_length=50, blank=True, null=True)
     image = models.ImageField(upload_to="product_images/", null=True, blank=True)
@@ -232,7 +287,7 @@ class WishlistItem(models.Model):
 # ------------------------
 # Orders
 # ------------------------
-# linkzur_app/models.py
+
 
 class Order(models.Model):
     STATUS_CHOICES = [
@@ -240,18 +295,26 @@ class Order(models.Model):
         ("processing", "Processing"),
         ("shipped", "Shipped"),
         ("delivered", "Delivered"),
+        ("completed", "Completed"),   # ✅ ADDED
         ("cancelled", "Cancelled"),
     ]
 
-    buyer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="orders")
+    buyer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="orders"
+    )
 
-    # NEW — Full formatted address from Google Places
     address = models.TextField(blank=True, null=True)
 
-  
-
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+
     total_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    # OTP for delivery confirmation
+    delivery_otp = models.CharField(max_length=6, blank=True, null=True)
+    is_delivered_verified = models.BooleanField(default=False)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

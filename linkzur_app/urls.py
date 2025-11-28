@@ -42,7 +42,11 @@ from .views import (
     seller_product_performance,
     seller_customer_insights,
     clear_from_cart,
-    upload_products
+    upload_products,
+    request_password_reset,
+    verify_password_reset,
+    verify_delivery_otp,
+    upload_invoice
 )
 
 urlpatterns = [
@@ -58,6 +62,10 @@ urlpatterns = [
     path("profile/", user_profile, name="profile"),
 
     path("update-profile/", update_user_profile, name="update_user_profile"),
+
+    path("request-password-reset/", request_password_reset),
+    path("verify-password-reset/", verify_password_reset),
+
 
     # ------------------------
     # Products
@@ -91,6 +99,8 @@ urlpatterns = [
     path("orders/place/", place_order, name="order-place"),
     path("orders/", view_orders, name="order-list"),
     path("orders/<int:order_id>/update-status/", update_order_status, name="order-update-status"),
+    path("orders/<int:order_id>/verify-otp/", verify_delivery_otp),
+     path("orders/<int:order_id>/upload-invoice/", upload_invoice, name="upload-invoice"),
     path("seller/orders/", seller_orders, name="seller-orders"),
 
     # ------------------------
