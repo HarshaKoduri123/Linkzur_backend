@@ -858,59 +858,26 @@ def remove_from_wishlist(request, product_id):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def place_order(request):
-    """
-    Creates a new order including variant-specific items
-    """
-    
+    print(request.data)
+
     serializer = OrderSerializer(data=request.data, context={"request": request})
     if not serializer.is_valid():
         return Response(serializer.errors, status=400)
 
     order = serializer.save()
 
-    # =============================
-    # APPLY DISCOUNTED PRICE HERE
-    # =============================
-    for item in order.items.all():
-        variant = item.variant or item.product.variants.first()
-
-        # Base price from variant
-        base_price = 0
-        if variant:
-            base_price = variant.price or variant.est_price or 0
-
-        # Product discount
-        discount = item.product.discount or 0
-
-        # Final discounted price
-        final_price = (
-            base_price - (base_price * (discount / 100))
-            if discount > 0
-            else base_price
-        )
-
-        # Save corrected price
-        item.price = final_price
-        item.save()
-
-    # =============================
-    # SUBTOTAL, TAX & TOTAL
-    # =============================
     subtotal = sum(i.price * i.quantity for i in order.items.all())
-    tax = subtotal * Decimal("0.18")
-    total = subtotal + tax
+
+    # price already includes GST → total = subtotal
+    order.total_price = subtotal
+    order.save()
 
 
-
-    # =============================
-    # CLEAR USER CART AFTER ORDER
-    # =============================
     CartItem.objects.filter(user=request.user).delete()
 
     return Response({
         "order": OrderSerializer(order).data,
     }, status=201)
-
 
 
 
@@ -1600,16 +1567,11 @@ def search_products(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def seller_dashboard_stats(request):
-    """
-    Main dashboard statistics for sellers.
-    Uses OrderItem.price when present; otherwise falls back to
-    the item's variant price → variant est_price.
-    """
+
     if request.user.role != "seller":
         return Response({"error": "Only sellers can access this endpoint"}, status=403)
 
-    # Period selector
-    period = request.GET.get("period", "month")  # day, week, month, year
+    period = request.GET.get("period", "month")
     today = timezone.now().date()
 
     if period == "day":
@@ -1617,25 +1579,34 @@ def seller_dashboard_stats(request):
     elif period == "week":
         start_date = today - timedelta(days=7)
     elif period == "month":
-        start_date = today.replace(day=1)
-    else:  # year
+        start_date = today - timedelta(days=30)
+
+    else:
         start_date = today.replace(month=1, day=1)
+
+    COMPLETED = Q(order__status="completed")  # 🔥 ONLY completed orders
 
     # Basic counts
     total_products = Product.objects.filter(seller=request.user).count()
+
     total_orders_distinct = (
-        Order.objects.filter(items__product__seller=request.user).distinct().count()
+        Order.objects.filter(
+            items__product__seller=request.user,
+            status="completed"  # 🔥 only completed
+        ).distinct().count()
     )
 
-    # Revenue with safe fallback on variant price / est_price
-    revenue_qs = OrderItem.objects.filter(
-        product__seller=request.user,
-        order__created_at__date__gte=start_date,
-    ).annotate(
-        eff_price=Coalesce(
-            "price",
-            Coalesce("variant__price", "variant__est_price"),
-            output_field=DecimalField(max_digits=18, decimal_places=2),
+    # Revenue from completed orders
+    revenue_qs = (
+        OrderItem.objects.filter(
+        Q(product__seller=request.user)
+        & Q(order__status="completed")    # ✅ CORRECT
+        & Q(order__created_at__date__gte=start_date)).annotate(
+            eff_price=Coalesce(
+                "price",
+                Coalesce("variant__price", "variant__est_price"),
+                output_field=DecimalField(max_digits=18, decimal_places=2),
+            )
         )
     )
 
@@ -1645,12 +1616,13 @@ def seller_dashboard_stats(request):
         total_orders=Count("order", distinct=True),
     )
 
+    # Safe conversions
     total_revenue = float(revenue_data.get("total_revenue") or 0)
     total_units_sold = int(revenue_data.get("total_units") or 0)
     total_orders_placed = int(revenue_data.get("total_orders") or 0)
-    avg_order_value = (total_revenue / total_orders_placed) if total_orders_placed else 0.0
+    avg_order_value = (total_revenue / total_orders_placed) if total_orders_placed else 0
 
-    # Order status breakdown (counts)
+    # Status breakdown (all orders)
     order_status = (
         Order.objects.filter(items__product__seller=request.user)
         .values("status")
@@ -1658,9 +1630,12 @@ def seller_dashboard_stats(request):
         .order_by("status")
     )
 
-    # Recent orders (last 5)
+    # Recent COMPLETED orders only
     recent_orders = (
-        Order.objects.filter(items__product__seller=request.user)
+        Order.objects.filter(
+            items__product__seller=request.user,
+            status="completed"  # 🔥 IMPORTANT
+        )
         .distinct()
         .order_by("-created_at")[:5]
     )
@@ -1698,41 +1673,44 @@ def seller_dashboard_stats(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def seller_sales_trends(request):
-    """
-    Aggregated sales trends for the seller over a period.
-    Uses eff_price (OrderItem.price → variant.price → variant.est_price).
-    """
+
     if request.user.role != "seller":
         return Response({"error": "Only sellers can access this endpoint"}, status=403)
 
-    period = request.GET.get("period", "month")  # day, week, month, year
+    period = request.GET.get("period", "month")
     now = timezone.now()
     today = now.date()
 
-    if period == "day":  # last 24 hours, grouped by hour
+    if period == "day":
         start_dt = now - timedelta(hours=24)
         trunc_func = TruncHour("order__created_at")
         time_filter = Q(order__created_at__gte=start_dt)
         fmt = "%Y-%m-%d %H:%M"
+
     elif period == "week":
         start_date = today - timedelta(days=7)
         trunc_func = TruncDay("order__created_at")
         time_filter = Q(order__created_at__date__gte=start_date)
         fmt = "%Y-%m-%d"
+
     elif period == "month":
-        start_date = today.replace(day=1)
+        start_date = today - timedelta(days=30)
         trunc_func = TruncDay("order__created_at")
         time_filter = Q(order__created_at__date__gte=start_date)
         fmt = "%Y-%m-%d"
-    else:  # year
+
+
+    else:
         start_date = today.replace(month=1, day=1)
         trunc_func = TruncMonth("order__created_at")
         time_filter = Q(order__created_at__date__gte=start_date)
         fmt = "%Y-%m"
 
+    COMPLETED = Q(order__status="completed")
+
     base = (
         OrderItem.objects.filter(product__seller=request.user)
-        .filter(time_filter)
+        .filter(time_filter & COMPLETED)
         .annotate(
             eff_price=Coalesce(
                 "price",
@@ -1759,9 +1737,9 @@ def seller_sales_trends(request):
         }
         for row in base
     ]
+    print(data)
 
     return Response({"period": period, "sales_trends": data})
-
 
 # ==========================================================
 # SELLER DASHBOARD — PRODUCT PERFORMANCE
@@ -1769,11 +1747,7 @@ def seller_sales_trends(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def seller_product_performance(request):
-    """
-    Product performance metrics for the seller.
-    Revenue is based on OrderItem.price (with fallback to variant price/est_price).
-    Also returns per-product derived min_effective_price from variants.
-    """
+
     if request.user.role != "seller":
         return Response({"error": "Only sellers can access this endpoint"}, status=403)
 
@@ -1785,11 +1759,12 @@ def seller_product_performance(request):
     elif period == "week":
         start_date = today - timedelta(days=7)
     elif period == "month":
-        start_date = today.replace(day=1)
-    else:  # year
+        start_date = today - timedelta(days=30)
+    else:
         start_date = today.replace(month=1, day=1)
 
-    # Base queryset of products for seller; annotate min effective variant price
+    COMPLETED = Q(order__status="completed")
+
     products_qs = (
         Product.objects.filter(seller=request.user)
         .annotate(
@@ -1800,12 +1775,12 @@ def seller_product_performance(request):
         .prefetch_related("variants", "reviews")
     )
 
-    # OrderItem aggregates (revenue/units/orders) per product over period with eff_price fallback
     perf_rows = (
         OrderItem.objects.filter(
-            product__seller=request.user, order__created_at__date__gte=start_date
-        )
-        .annotate(
+            Q(product__seller=request.user)
+            & Q(order__status="completed")    # ✅ CORRECT
+            & Q(order__created_at__date__gte=start_date)
+        ).annotate(
             eff_price=Coalesce(
                 "price",
                 Coalesce("variant__price", "variant__est_price"),
@@ -1819,7 +1794,7 @@ def seller_product_performance(request):
             order_count=Count("order", distinct=True),
         )
     )
-    # Map aggregates by product_id
+
     by_pid = {
         r["product_id"]: {
             "total_sales": int(r["total_sales"] or 0),
@@ -1829,22 +1804,19 @@ def seller_product_performance(request):
         for r in perf_rows
     }
 
-    # Compose response
-    out = []
+    out_products = []
+
     for p in products_qs:
-        # product-level ratings
         avg_rating = p.reviews.aggregate(avg=Avg("rating")).get("avg") or 0
         review_count = p.reviews.count()
 
-        # merged aggregates
         agg = by_pid.get(p.id, {"total_sales": 0, "total_revenue": 0.0, "order_count": 0})
 
-        out.append(
+        out_products.append(
             {
                 "id": p.id,
                 "name": p.name,
                 "category": p.category,
-                # Derived display price from variants (not a raw product.price)
                 "min_effective_price": float(p.min_effective_price or 0),
                 "total_sales": agg["total_sales"],
                 "total_revenue": agg["total_revenue"],
@@ -1854,22 +1826,56 @@ def seller_product_performance(request):
             }
         )
 
-    # Sort by revenue desc and return top 10 for convenience
-    out_sorted = sorted(out, key=lambda x: x["total_revenue"], reverse=True)[:10]
-    return Response({"top_products": out_sorted})
+    # CATEGORY PERFORMANCE (ONLY completed orders)
+    category_rows = (
+       OrderItem.objects.filter(
+            Q(product__seller=request.user)
+            & Q(order__status="completed")    # ✅ CORRECT
+            & Q(order__created_at__date__gte=start_date)
+        )
 
+        .annotate(
+            eff_price=Coalesce(
+                "price",
+                Coalesce("variant__price", "variant__est_price"),
+                output_field=DecimalField(max_digits=18, decimal_places=2),
+            )
+        )
+        .values("product__category")
+        .annotate(
+            total_revenue=Sum(F("eff_price") * F("quantity")),
+            total_sales=Sum("quantity"),
+            product_count=Count("product", distinct=True),
+        )
+        .order_by("product__category")
+    )
+
+    category_performance = [
+        {
+            "category": row["product__category"],
+            "total_revenue": float(row["total_revenue"] or 0),
+            "product_count": row["product_count"],
+            "total_sales": row["total_sales"],
+        }
+        for row in category_rows
+    ]
+
+    top_sorted = sorted(out_products, key=lambda x: x["total_revenue"], reverse=True)[:10]
+
+    return Response(
+        {
+            "top_products": top_sorted,
+            "category_performance": category_performance,
+        }
+    )
 
 # ==========================================================
 # SELLER DASHBOARD — CUSTOMER INSIGHTS
-# ==========================================================
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def seller_customer_insights(request):
-    """
-    Customer insights and behavior for the seller.
-    Uses Order.total_price for CLV; if you want a variant-aware fallback here,
-    ensure total_price is written correctly at order creation (it is in place_order).
-    """
+
     if request.user.role != "seller":
         return Response({"error": "Only sellers can access this endpoint"}, status=403)
 
@@ -1881,14 +1887,16 @@ def seller_customer_insights(request):
     elif period == "week":
         start_date = today - timedelta(days=7)
     elif period == "month":
-        start_date = today.replace(day=1)
-    else:  # year
+        start_date = today - timedelta(days=30)
+
+    else:
         start_date = today.replace(month=1, day=1)
 
-    # All orders that include this seller's items
+    # ONLY COMPLETED ORDERS COUNT
     customer_data = (
         Order.objects.filter(
             items__product__seller=request.user,
+            status="completed",  # 🔥 only completed orders
             created_at__date__gte=start_date,
         )
         .values("buyer")
@@ -1899,24 +1907,18 @@ def seller_customer_insights(request):
         .order_by("-total_spent")
     )
 
-    repeat_customers = 0
-    new_customers = 0
     total_customers = len(customer_data)
-    total_spend_all = 0.0
+    repeat_customers = sum(1 for c in customer_data if c["order_count"] > 1)
+    new_customers = total_customers - repeat_customers
 
-    for c in customer_data:
-        if (c.get("order_count") or 0) > 1:
-            repeat_customers += 1
-        else:
-            new_customers += 1
-        total_spend_all += float(c.get("total_spent") or 0)
+    total_spent = sum(float(c["total_spent"] or 0) for c in customer_data)
 
     return Response(
         {
             "total_customers": total_customers,
             "repeat_customers": repeat_customers,
             "new_customers": new_customers,
-            "repeat_rate": (repeat_customers / total_customers * 100) if total_customers else 0.0,
-            "avg_customer_value": (total_spend_all / total_customers) if total_customers else 0.0,
+            "repeat_rate": (repeat_customers / total_customers * 100) if total_customers else 0,
+            "avg_customer_value": (total_spent / total_customers) if total_customers else 0,
         }
     )

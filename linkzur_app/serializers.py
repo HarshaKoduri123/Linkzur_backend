@@ -218,7 +218,7 @@ class OrderSerializer(serializers.ModelSerializer):
             variant = item_data.get("variant", product.variants.first())
             quantity = item_data["quantity"]
 
-            price = (variant.price or variant.est_price or 0) * quantity
+            price = item_data["price"]
 
             OrderItem.objects.create(
                 order=order,
