@@ -25,7 +25,7 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from .models import (
-    CustomUser, Product, ProductVariant, CartItem, WishlistItem, Order,
+    CustomUser, Product, ProductVariant, CartItem, WishlistItem, Order, CATEGORIES,
     OrderItem, Notification, Payment, Quotation,
     ProductConversation, ProductMessage, QuotationRequest, 
     Review, Invoice, PendingUser,BuyerProfile, SellerProfile, PasswordResetToken, ShippingAddress, BillingAddress
@@ -649,14 +649,13 @@ def add_product(request):
 @parser_classes([MultiPartParser, FormParser])
 def upload_products(request):
     """
-    Bulk upload products with variants via Excel file.
-    Expected Excel format:
-    -------------------------------------------------------------------------
-    | name | ref_no | description | category | hsn | discount | brand | cas_no | variant_label | est_price | price |
-    -------------------------------------------------------------------------
-    Each row = one variant of a product.
-    Multiple rows can share the same ref_no for multiple variants.
+    Bulk upload products + variants via Excel file.
+    REQUIRED COLUMNS:
+    name | ref_no | description | category | hsn | discount | brand | cas_no | gst | variant_label | est_price | price
     """
+    import openpyxl
+    from decimal import Decimal, InvalidOperation
+
     excel_file = request.FILES.get("file")
     if not excel_file:
         return Response({"detail": "No file uploaded."}, status=400)
@@ -667,57 +666,144 @@ def upload_products(request):
     except Exception as e:
         return Response({"detail": f"Invalid Excel file: {str(e)}"}, status=400)
 
-    headers = [cell.value for cell in ws[1]]
-    required_fields = ["name", "ref_no", "category", "brand", "variant_label", "est_price"]
+    # ----------------------------------------------------------------
+    # Validate Columns
+    # ----------------------------------------------------------------
+    headers = [str(cell.value).strip() for cell in ws[1]]
+    
+
+    required_fields = [
+        "name", "ref_no", "category", "brand",
+        "variant_label", "est_price", "gst"
+    ]
+
     for field in required_fields:
         if field not in headers:
             return Response({"detail": f"Missing required column: '{field}'"}, status=400)
 
-    created_products = []
-    products_map = {}  # {ref_no: product_instance}
+    index_map = {field: headers.index(field) for field in headers}
 
+    created_products = []
+    product_cache = {}  # ref_no → product
+
+    # Safe decimal conversion
+    def to_decimal(value):
+        if value in [None, "", " ", "nan"]:
+            return None
+        try:
+            return Decimal(str(value))
+        except InvalidOperation:
+            return None
+   
+
+    # ----------------------------------------------------------------
+    # Process Excel Rows
+    # ----------------------------------------------------------------
     for row in ws.iter_rows(min_row=2, values_only=True):
-        row_data = dict(zip(headers, row))
-        ref_no = str(row_data.get("ref_no")).strip() if row_data.get("ref_no") else None
+
+        if not row or not any(row):  # skip blank rows
+            continue
+
+        def get(col):
+            try:
+                val = row[index_map[col]]
+                return None if val in ["", " ", None] else val
+            except:
+                return None
+
+        ref_no = str(get("ref_no"))
         if not ref_no:
             continue
 
-        # Create product only once per ref_no
-        if ref_no not in products_map:
+        # -----------------------------------------------------------
+        # Create Product Only Once Per ref_no
+        # -----------------------------------------------------------
+      
+        if ref_no not in product_cache:
+
+            # Normalize category
+            category = str(get("category")).lower().replace(" ", "_")
+            
+            
+            valid_categories = [c[0] for c in CATEGORIES]
+
+            if category not in valid_categories:
+                return Response({
+                    "detail": f"Invalid category '{category}'. Must be one of {valid_categories}"
+                }, status=400)
+
+            gst_value = to_decimal(get("gst"))
+            print(gst_value)
+            if gst_value is None:
+                return Response({
+                    "detail": f"Invalid GST value for ref_no {ref_no}"
+                }, status=400)
+
             product_data = {
-                "name": row_data.get("name"),
+                "name": get("name"),
                 "ref_no": ref_no,
-                "description": row_data.get("description"),
-                "category": row_data.get("category"),
-                "hsn": row_data.get("hsn"),
-                "discount": row_data.get("discount"),
-                "brand": row_data.get("brand"),
-                "cas_no": row_data.get("cas_no"),
+                "description": get("description"),
+                "category": category,
+                "hsn": get("hsn"),
+                "discount": to_decimal(get("discount")),
+                "brand": get("brand"),
+                "cas_no": get("cas_no"),
+                "gst": gst_value,  # <-- added GST support
             }
+            print(product_data)
 
             serializer = ProductSerializer(data=product_data, context={"request": request})
-            if serializer.is_valid():
-                product = serializer.save(seller=request.user)
-                products_map[ref_no] = product
-                created_products.append(product)
-            else:
-                return Response({"detail": "Validation error", "errors": serializer.errors}, status=400)
 
-        # Add variant
-        product = products_map[ref_no]
-        variant_data = {
-            "variant_label": row_data.get("variant_label"),
-            "est_price": row_data.get("est_price"),
-            "price": row_data.get("price"),
-        }
+            if not serializer.is_valid():
+                return Response({
+                    "detail": "Product validation failed",
+                    "ref_no": ref_no,
+                    "errors": serializer.errors,
+                }, status=400)
+
+            product = serializer.save(seller=request.user)
+            product_cache[ref_no] = product
+            created_products.append(product)
+
+        else:
+            product = product_cache[ref_no]
+
+        # -----------------------------------------------------------
+        # Create Variant
+        # -----------------------------------------------------------
+        variant_label = get("variant_label")
+
+        est_price = to_decimal(get("est_price"))
+        price = to_decimal(get("price"))
+
+        if est_price is None:
+            return Response({
+                "detail": f"Invalid est_price for ref_no {ref_no}"
+            }, status=400)
 
         try:
-            ProductVariant.objects.create(product=product, **variant_data)
+            ProductVariant.objects.create(
+                product=product,
+                variant_label=variant_label,
+                est_price=est_price,
+                price=price,
+            )
         except Exception as e:
-            return Response({"detail": f"Error creating variant for {ref_no}: {str(e)}"}, status=400)
+            return Response({
+                "detail": f"Error creating variant for {ref_no}: {str(e)}"
+            }, status=400)
 
-    serialized = ProductSerializer(created_products, many=True, context={"request": request})
-    return Response({"created": len(created_products), "products": serialized.data}, status=201)
+    # ----------------------------------------------------------------
+    # SUCCESS RESPONSE
+    # ----------------------------------------------------------------
+    serialized = ProductSerializer(
+        created_products, many=True, context={"request": request}
+    )
+
+    return Response({
+        "created_products": len(created_products),
+        "products": serialized.data
+    }, status=201)
 
 @api_view(["PUT"])
 @permission_classes([IsAuthenticated])
