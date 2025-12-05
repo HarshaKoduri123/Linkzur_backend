@@ -15,6 +15,7 @@ from .models import (
     Review,
     Invoice,
     PendingUser,
+    RecentlyViewed
 )
 
 # ==========================================================
@@ -350,3 +351,10 @@ class ReviewSerializer(serializers.ModelSerializer):
 
 
 
+# serializers.py
+class RecentlyViewedSerializer(serializers.ModelSerializer):
+    product = ProductSerializer(read_only=True)
+
+    class Meta:
+        model = RecentlyViewed
+        fields = ["id", "product", "viewed_at"]

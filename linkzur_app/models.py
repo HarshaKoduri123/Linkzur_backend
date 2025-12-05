@@ -518,3 +518,25 @@ class PendingUser(models.Model):
 
     def __str__(self):
         return f"{self.email} - {self.otp}"
+
+# models.py
+
+class RecentlyViewed(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="recently_viewed"
+    )
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name="recently_viewed_users"
+    )
+    viewed_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("user", "product")
+        ordering = ["-viewed_at"]
+
+    def __str__(self):
+        return f"{self.user.email} viewed {self.product.name}"

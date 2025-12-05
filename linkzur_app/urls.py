@@ -46,7 +46,9 @@ from .views import (
     request_password_reset,
     verify_password_reset,
     verify_delivery_otp,
-    upload_invoice
+    upload_invoice,
+    add_recent_view,
+    get_recently_viewed
 )
 
 urlpatterns = [
@@ -146,4 +148,9 @@ urlpatterns = [
     path("seller/dashboard/sales-trends/", seller_sales_trends, name="seller-sales-trends"),
     path("seller/dashboard/product-performance/", seller_product_performance, name="seller-product-performance"),
     path("seller/dashboard/customer-insights/", seller_customer_insights, name="seller-customer-insights"),
+    # ------------------------
+    # Seller Dashboard
+    # ------------------------
+    path("products/<int:product_id>/recent-view/", add_recent_view),
+    path("recently-viewed/", get_recently_viewed),
 ]

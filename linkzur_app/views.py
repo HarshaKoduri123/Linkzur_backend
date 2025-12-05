@@ -25,7 +25,7 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from .models import (
-    CustomUser, Product, ProductVariant, CartItem, WishlistItem, Order, CATEGORIES,
+    CustomUser, Product, ProductVariant, CartItem, WishlistItem, Order, CATEGORIES, RecentlyViewed,
     OrderItem, Notification, Payment, Quotation,
     ProductConversation, ProductMessage, QuotationRequest, 
     Review, Invoice, PendingUser,BuyerProfile, SellerProfile, PasswordResetToken, ShippingAddress, BillingAddress
@@ -35,7 +35,7 @@ from .serializers import (
     WishlistItemSerializer, OrderSerializer, NotificationSerializer,
     QuotationSerializer, ProductConversationSerializer, ProductMessageSerializer,
     QuotationRequestSerializer, OrderStatusUpdateSerializer, ReviewSerializer,
-    InvoiceSerializer, VerifyOTPSerializer
+    InvoiceSerializer, VerifyOTPSerializer, RecentlyViewedSerializer
 )
 from .utils.paytm_utils import (
     PAYTM_MID, PAYTM_INITIATE_URL, generate_checksum, verify_checksum
@@ -839,6 +839,37 @@ def delete_product(request, pk):
         return Response({"detail": "Not found"}, status=404)
     p.delete()
     return Response({"detail": "Product deleted."}, status=204)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def add_recent_view(request, product_id):
+
+    user = request.user
+
+    try:
+        product = Product.objects.get(id=product_id)
+    
+    except Product.DoesNotExist:
+        return Response({"error": "Product not found"}, status=404)
+
+    # Create or update timestamp
+    entry, created = RecentlyViewed.objects.update_or_create(
+        user=user,
+        product=product,
+        defaults={"viewed_at": timezone.now()}
+    )
+
+    # Keep only last 20 items
+    recent_ids = (
+        RecentlyViewed.objects.filter(user=user)
+        .order_by("-viewed_at")
+        .values_list("id", flat=True)[:20]
+    )
+
+    RecentlyViewed.objects.filter(user=user).exclude(id__in=list(recent_ids)).delete()
+
+    return Response({"message": "Added to recently viewed"})
 
 # ==========================================================
 # CART & WISHLIST (variant-aware)
@@ -2008,3 +2039,12 @@ def seller_customer_insights(request):
             "avg_customer_value": (total_spent / total_customers) if total_customers else 0,
         }
     )
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_recently_viewed(request):
+    user = request.user
+    items = RecentlyViewed.objects.filter(user=user).select_related("product")
+    data = RecentlyViewedSerializer(items, many=True, context={"request": request}).data
+    print(data)
+    return Response(data)
