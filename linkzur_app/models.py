@@ -364,7 +364,7 @@ class Payment(models.Model):
 
 
 # ------------------------
-# QuotationRequest (pre-order)
+# QuotationRequest
 # ------------------------
 class QuotationRequest(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="quotation_requests")
@@ -375,6 +375,8 @@ class QuotationRequest(models.Model):
         null=True,
         blank=True
     )
+
+    quantity = models.PositiveIntegerField(default=1)
     buyer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="sent_quotation_requests")
     seller = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="received_quotation_requests")
 
@@ -390,7 +392,7 @@ class QuotationRequest(models.Model):
 
 
 # ------------------------
-# Quotation (can be post-order or pre-order)
+# Quotation
 # ------------------------
 class Quotation(models.Model):
     """

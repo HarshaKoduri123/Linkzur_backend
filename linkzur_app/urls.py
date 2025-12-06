@@ -22,14 +22,12 @@ from .views import (
     update_order_status,
     get_notifications,
     mark_notification_read,
-    # initiate_paytm_payment,
-    # payment_callback,
-    upload_quotation,
-    list_order_quotations,
+
+    
     request_quotation_preproduct,
     list_my_quotation_requests,
     upload_quotation_for_request,
-    get_quotation_for_request,
+   
     start_or_get_conversation,
     list_conversations_for_user,
     list_messages,
@@ -111,21 +109,13 @@ urlpatterns = [
     path("notifications/", get_notifications, name="notification-list"),
     path("notifications/<int:pk>/read/", mark_notification_read, name="notification-read"),
 
-    # ------------------------
-    # Paytm
-    # ------------------------
-    # path("paytm/initiate/<int:order_id>/", initiate_paytm_payment, name="paytm-initiate"),
-    # path("paytm/callback/", payment_callback, name="paytm-callback"),
 
     # ------------------------
     # Quotations
     # ------------------------
-    path("quotation-requests/<int:request_id>/quotations/upload/", upload_quotation, name="upload-quotation"),
-    path("orders/<int:order_id>/quotations/", list_order_quotations, name="list-quotations"),
     path("products/<int:product_id>/request-preproduct-quotation/",request_quotation_preproduct,name="request-preproduct-quotation"),
     path("quotation-requests/", list_my_quotation_requests, name="list-quotation-requests"),
     path("quotation-requests/<int:request_id>/upload/", upload_quotation_for_request, name="upload-quotation-request"),
-    path("quotation-requests/<int:request_id>/quotation/", get_quotation_for_request, name="get-quotation-request"),
 
     # ------------------------
     # Product Conversations

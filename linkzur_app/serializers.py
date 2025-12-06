@@ -277,17 +277,13 @@ class QuotationSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         return request.build_absolute_uri(obj.file.url) if obj.file and request else None
 
-
-# ==========================================================
-# QUOTATION REQUESTS (PRE-ORDER)
-# ==========================================================
 class QuotationRequestSerializer(serializers.ModelSerializer):
     buyer = serializers.StringRelatedField(read_only=True)
     seller = serializers.StringRelatedField(read_only=True)
     product = ProductSerializer(read_only=True)
     variant = ProductVariantSerializer(read_only=True)
 
-    quotation = QuotationSerializer(read_only=True)  # FULL quotation with file
+    quotation = QuotationSerializer(read_only=True)  
 
     class Meta:
         model = QuotationRequest
@@ -297,9 +293,10 @@ class QuotationRequestSerializer(serializers.ModelSerializer):
             "variant",
             "buyer",
             "seller",
+            "quantity",
             "created_at",
             "is_resolved",
-            "quotation",  # 🔥 includes file_url, note, is_invoice
+            "quotation",  
         ]
 
 
@@ -351,7 +348,7 @@ class ReviewSerializer(serializers.ModelSerializer):
 
 
 
-# serializers.py
+
 class RecentlyViewedSerializer(serializers.ModelSerializer):
     product = ProductSerializer(read_only=True)
 
