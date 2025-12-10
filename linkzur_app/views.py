@@ -561,7 +561,13 @@ def list_products(request):
         qs = qs.filter(category=category)
     if seller:
         qs = qs.filter(seller_id=seller)
+
+    if request.user.is_authenticated:
+        if request.user.role == "seller":
+            qs = qs.filter(seller=request.user)
     return Response(ProductSerializer(qs, many=True, context={"request": request}).data)
+
+
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
