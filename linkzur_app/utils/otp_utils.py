@@ -201,3 +201,83 @@ def send_delivery_otp_email(email: str, otp: str) -> bool:
     except Exception as e:
         logger.error(f"❌ Failed to send delivery OTP to {email}: {e}")
         return False
+
+import logging
+from django.core.mail import send_mail
+from django.conf import settings
+
+logger = logging.getLogger(__name__)
+
+
+# ------------------------------------------------
+# BUYER ORDER CONFIRMATION EMAIL
+# ------------------------------------------------
+def send_order_confirmation_email(email: str, order):
+   
+    subject = f"Order #{order.id} Confirmed – Linkzur"
+    message = (
+        f"Hello,\n\n"
+        f"Your order #{order.id} has been successfully placed.\n"
+        f"Total Amount: ₹{order.total_price}\n"
+        f"Status: {order.status}\n\n"
+        f"Thank you for shopping with Linkzur!\n\n"
+        f"Regards,\n"
+        f"Linkzur Team"
+    )
+
+    try:
+        send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [email])
+        logger.info(f"📧 Order confirmation email sent to {email}")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to send confirmation email to {email}: {e}")
+        return False
+
+
+
+# ------------------------------------------------
+# SELLER ORDER ALERT EMAIL
+# ------------------------------------------------
+def send_seller_new_order_email(email: str, order):
+    print(order)
+    print(order.buyer.email)
+    subject = f"New Order Received – Order #{order.id}"
+    message = (
+        f"Hello Seller,\n\n"
+        f"You have received a new order containing your products.\n"
+        f"Order ID: #{order.id}\n"
+        f"Buyer: {order.buyer.email}\n\n"
+        f"Please review and process the order.\n\n"
+        f"- Linkzur Team"
+    )
+
+    try:
+        send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [email])
+        logger.info(f"📧 Seller alert email sent to {email}")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to send seller order alert to {email}: {e}")
+        return False
+
+
+
+# ------------------------------------------------
+# BUYER STATUS UPDATE EMAIL
+# ------------------------------------------------
+def send_order_status_update_email(email: str, order):
+    subject = f"Order #{order.id} Status Updated"
+    message = (
+        f"Hello,\n\n"
+        f"The status of your order #{order.id} has been updated.\n"
+        f"New Status: {order.status}\n\n"
+        f"Thank you for shopping with Linkzur!\n\n"
+        f"- Linkzur Team"
+    )
+
+    try:
+        send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [email])
+        logger.info(f"📧 Order status update email sent to {email}")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to send status update email: {e}")
+        return False

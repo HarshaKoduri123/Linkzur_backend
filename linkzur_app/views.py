@@ -38,7 +38,7 @@ from .serializers import (
     InvoiceSerializer, VerifyOTPSerializer, RecentlyViewedSerializer
 )
 
-from .utils.otp_utils import generate_otp, send_otp_email, send_password_reset_email, send_delivery_otp_email
+from .utils.otp_utils import generate_otp, send_otp_email, send_password_reset_email, send_delivery_otp_email, send_order_confirmation_email, send_order_status_update_email, send_seller_new_order_email
 from django.contrib.auth import get_user_model
 import openpyxl
 
@@ -921,20 +921,55 @@ def remove_from_wishlist(request, product_id):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def place_order(request):
-   
-
     serializer = OrderSerializer(data=request.data, context={"request": request})
     if not serializer.is_valid():
         return Response(serializer.errors, status=400)
 
     order = serializer.save()
 
+    # Calculate price
     subtotal = sum(i.price * i.quantity for i in order.items.all())
     order.total_price = subtotal
+    order.status = "pending"
     order.save()
+    print("hii")
 
-
+    # Clear cart
     CartItem.objects.filter(user=request.user).delete()
+
+    # ----------------------------------------------------
+    # 🔔 IN-APP NOTIFICATION — BUYER
+    # ----------------------------------------------------
+    Notification.objects.create(
+        user=request.user,
+        message=f"Your order #{order.id} has been placed successfully!"
+    )
+    print("hii2")
+
+    # ----------------------------------------------------
+    # 📧 EMAIL — BUYER
+    # ----------------------------------------------------
+    send_order_confirmation_email(request.user.email, order)
+    print("hii3")
+
+    # ----------------------------------------------------
+    # 🔔 + 📧 SELLER NOTIFICATIONS
+    # ----------------------------------------------------
+    seller_ids = order.items.values_list("product__seller_id", flat=True).distinct()
+    sellers = User.objects.filter(id__in=seller_ids)
+
+    for seller in sellers:
+        # IN-APP notification
+        Notification.objects.create(
+            user=seller,
+            message=f"You received a new order #{order.id}."
+        )
+        print("hii4")
+
+        # Email
+        print(seller.email,order)
+        send_seller_new_order_email(seller.email, order)
+        print("done")
 
     return Response({
         "order": OrderSerializer(order).data,
@@ -971,59 +1006,69 @@ def seller_orders(request):
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])
 def update_order_status(request, order_id):
-    """
-    Allows sellers involved in an order to update its status.
-    Handles OTP generation when marking order as delivered.
-    """
     try:
         order = Order.objects.prefetch_related("items__product__seller").get(id=order_id)
     except Order.DoesNotExist:
         return Response({"error": "Order not found"}, status=404)
-
 
     if request.user not in [i.product.seller for i in order.items.all()]:
         return Response({"error": "Not authorized"}, status=403)
 
     new_status = request.data.get("status")
 
-
+    
     if new_status == "delivered":
-
         otp = generate_otp()
         order.delivery_otp = otp
         order.is_delivered_verified = False
         order.status = "delivered"
         order.save()
 
-       
+        # EMAIL: OTP
         send_delivery_otp_email(order.buyer.email, otp)
 
-     
+        # IN-APP: Buyer
         Notification.objects.create(
             user=order.buyer,
-            message=f"Your order #{order.id} is out for delivery. OTP sent."
+            message=f"Your order #{order.id} is marked delivered. OTP sent."
+        )
+
+        # IN-APP: Seller
+        Notification.objects.create(
+            user=request.user,
+            message=f"OTP sent to buyer for order #{order.id}."
         )
 
         return Response({
-            "message": f"Order #{order.id} marked as delivered. OTP sent to buyer.",
-            "otp_sent": True
+            "message": f"Order #{order.id} marked as delivered. OTP sent."
         }, status=200)
 
 
+    # General status updates
     serializer = OrderStatusUpdateSerializer(order, data=request.data, partial=True)
     if serializer.is_valid():
         serializer.save()
 
+        # IN-APP: Buyer
         Notification.objects.create(
             user=order.buyer,
-            message=f"Your order #{order.id} status changed to '{order.status}'."
+            message=f"Your order #{order.id} status updated to '{order.status}'."
         )
 
-        return Response({
-            "message": f"Order #{order.id} updated to '{order.status}'."
-        }, status=200)
+        # EMAIL: Buyer
+        send_order_status_update_email(order.buyer.email, order)
+
+        # IN-APP: Seller
+        for seller in {i.product.seller for i in order.items.all()}:
+            Notification.objects.create(
+                user=seller,
+                message=f"Order #{order.id} status updated to '{order.status}'."
+            )
+
+        return Response({"message": f"Order #{order.id} status updated."}, status=200)
 
     return Response(serializer.errors, status=400)
+
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
