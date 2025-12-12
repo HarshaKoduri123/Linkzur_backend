@@ -16,6 +16,7 @@ DEBUG = False  # ⚠️ Change to False before deploying to Render
 ALLOWED_HOSTS = [
     "127.0.0.1",
     "localhost",
+    "10.0.0.93",
     "linkzur.com",
     "www.linkzur.com",
 ]
