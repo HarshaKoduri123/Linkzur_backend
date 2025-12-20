@@ -11,7 +11,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = 'django-insecure-#-bl8c4rg*&g)(%s+gdb9kwwmi82#$j^v@kkjdye2d=0^qdqin'
 
-DEBUG = False  # ⚠️ Change to False before deploying to Render
+DEBUG = False  
 
 ALLOWED_HOSTS = [
     "127.0.0.1",

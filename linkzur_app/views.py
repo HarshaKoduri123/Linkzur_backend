@@ -38,6 +38,9 @@ from .serializers import (
     InvoiceSerializer, VerifyOTPSerializer, RecentlyViewedSerializer
 )
 
+from rest_framework.pagination import PageNumberPagination
+
+
 from .utils.otp_utils import generate_otp, send_otp_email, send_password_reset_email, send_delivery_otp_email, send_order_confirmation_email, send_order_status_update_email, send_seller_new_order_email
 from django.contrib.auth import get_user_model
 import openpyxl
@@ -551,22 +554,46 @@ def verify_password_reset(request):
 # ==========================================================
 # PRODUCT ENDPOINTS
 # ==========================================================
+
+class ProductPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = "page_size"
+    max_page_size = 100
+
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def list_products(request):
-    qs = Product.objects.select_related("seller").prefetch_related("variants", "reviews").order_by("-created_at")
+    qs = (
+        Product.objects
+        .select_related("seller")
+        .prefetch_related("variants", "reviews")
+        .order_by("-created_at")
+    )
+
     category = request.GET.get("category")
     seller = request.GET.get("seller")
+
     if category:
         qs = qs.filter(category=category)
+
     if seller:
         qs = qs.filter(seller_id=seller)
 
-    if request.user.is_authenticated:
-        if request.user.role == "seller":
-            qs = qs.filter(seller=request.user)
-    return Response(ProductSerializer(qs, many=True, context={"request": request}).data)
+    if request.user.is_authenticated and request.user.role == "seller":
+        qs = qs.filter(seller=request.user)
 
+    paginator = ProductPagination()
+    page = paginator.paginate_queryset(qs, request)
+
+    serializer = ProductSerializer(
+        page,
+        many=True,
+        context={"request": request}
+    )
+
+    return paginator.get_paginated_response(serializer.data)
 
 
 @api_view(["POST"])

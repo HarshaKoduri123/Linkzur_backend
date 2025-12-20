@@ -22,12 +22,9 @@ from .views import (
     update_order_status,
     get_notifications,
     mark_notification_read,
-
-    
     request_quotation_preproduct,
     list_my_quotation_requests,
     upload_quotation_for_request,
-   
     start_or_get_conversation,
     list_conversations_for_user,
     list_messages,
@@ -138,9 +135,7 @@ urlpatterns = [
     path("seller/dashboard/sales-trends/", seller_sales_trends, name="seller-sales-trends"),
     path("seller/dashboard/product-performance/", seller_product_performance, name="seller-product-performance"),
     path("seller/dashboard/customer-insights/", seller_customer_insights, name="seller-customer-insights"),
-    # ------------------------
-    # Seller Dashboard
-    # ------------------------
+
     path("products/<int:product_id>/recent-view/", add_recent_view),
     path("recently-viewed/", get_recently_viewed),
 ]
