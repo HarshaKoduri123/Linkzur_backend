@@ -213,21 +213,23 @@ class Product(models.Model):
     )
 
     name = models.CharField(max_length=255)
-    ref_no = models.CharField(max_length=100, unique=True)
+    ref_no = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
     category = models.CharField(max_length=50, choices=CATEGORY_CHOICES)
     hsn = models.CharField(max_length=20, blank=True, null=True)
-    discount = models.DecimalField(
-        max_digits=5, decimal_places=2, blank=True, null=True
-    )
-    gst = models.DecimalField(max_digits=5, decimal_places=2, default=0)  
-
+    gst = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     brand = models.CharField(max_length=255)
     cas_no = models.CharField(max_length=50, blank=True, null=True)
     image = models.ImageField(upload_to="product_images/", null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("seller", "ref_no")
+        indexes = [
+            models.Index(fields=["seller", "ref_no"]),
+        ]
 
     def __str__(self):
         return f"{self.name} ({self.seller.email})"
@@ -242,10 +244,13 @@ class Product(models.Model):
 class ProductVariant(models.Model):
 
     product = models.ForeignKey("Product", on_delete=models.CASCADE, related_name="variants")
-    variant_label = models.CharField(max_length=100)  # e.g. "1 Liter", "2 kg", "500 mL bottle"
+    variant_label = models.CharField(max_length=100)
     est_price = models.DecimalField(max_digits=10, decimal_places=2)
     price = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    discount = models.DecimalField(
+        max_digits=5, decimal_places=2, blank=True, null=True
+    )
     #seller varient id
 
     def __str__(self):

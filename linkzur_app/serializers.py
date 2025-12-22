@@ -67,7 +67,7 @@ class VerifyOTPSerializer(serializers.Serializer):
 class ProductVariantSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProductVariant
-        fields = ["id", "variant_label", "est_price", "price", "created_at"]
+        fields = ["id", "variant_label", "est_price", "price", "discount", "created_at"]
 
 
 class ProductSerializer(serializers.ModelSerializer):
@@ -80,7 +80,7 @@ class ProductSerializer(serializers.ModelSerializer):
         model = Product
         fields = [
             "id", "name", "ref_no", "description", "category", "hsn",
-            "discount", "brand", "cas_no", "image", "seller", "gst",
+             "brand", "cas_no", "image", "seller", "gst",
             "created_at", "updated_at", "average_rating", "total_reviews", "variants",
         ]
         read_only_fields = ["created_at", "updated_at", "seller"]
