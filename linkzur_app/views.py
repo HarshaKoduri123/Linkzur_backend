@@ -906,6 +906,38 @@ def get_recently_viewed(request):
     
     return Response(data)
 
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def recommended_products(request):
+    """
+    Random product recommendations (guest + buyer).
+    Paginated.
+    """
+
+    qs = (
+        Product.objects
+        .select_related("seller")
+        .prefetch_related("variants", "reviews")
+    )
+
+    # ❌ Seller should NOT get recommendations
+    if request.user.is_authenticated and request.user.role == "seller":
+        qs = qs.none()
+
+    # ✅ Random ordering (safe for pagination)
+    qs = qs.order_by("?")
+
+    paginator = ProductPagination()
+    page = paginator.paginate_queryset(qs, request)
+
+    serializer = ProductSerializer(
+        page,
+        many=True,
+        context={"request": request}
+    )
+
+    return paginator.get_paginated_response(serializer.data)
+    
 # ==========================================================
 # CART & WISHLIST 
 # ==========================================================

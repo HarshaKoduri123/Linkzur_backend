@@ -43,7 +43,8 @@ from .views import (
     verify_delivery_otp,
     upload_invoice,
     add_recent_view,
-    get_recently_viewed
+    get_recently_viewed,
+    recommended_products
 )
 
 urlpatterns = [
@@ -138,4 +139,6 @@ urlpatterns = [
 
     path("products/<int:product_id>/recent-view/", add_recent_view),
     path("recently-viewed/", get_recently_viewed),
+    path("products/recommendations/", recommended_products),
+
 ]
