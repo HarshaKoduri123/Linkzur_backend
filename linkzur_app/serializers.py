@@ -231,6 +231,7 @@ class OrderSerializer(serializers.ModelSerializer):
 
             total_price += price
 
+
             Notification.objects.create(
                 user=product.seller,
                 message=f"Buyer {buyer.name} purchased {quantity} x {product.name}"

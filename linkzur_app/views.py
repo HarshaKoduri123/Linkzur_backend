@@ -1051,7 +1051,6 @@ def place_order(request):
     order.total_price = subtotal
     order.status = "pending"
     order.save()
-    print("hii")
 
     # Clear cart
     CartItem.objects.filter(user=request.user).delete()
@@ -1063,13 +1062,11 @@ def place_order(request):
         user=request.user,
         message=f"Your order #{order.id} has been placed successfully!"
     )
-    print("hii2")
 
     # ----------------------------------------------------
     # 📧 EMAIL — BUYER
     # ----------------------------------------------------
     send_order_confirmation_email(request.user.email, order)
-    print("hii3")
 
     # ----------------------------------------------------
     # 🔔 + 📧 SELLER NOTIFICATIONS
