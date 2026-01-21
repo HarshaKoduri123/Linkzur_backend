@@ -1351,10 +1351,17 @@ def mark_notification_read(request, pk):
     Mark a single notification as read.
     """
     try:
-        notif = Notification.objects.get(pk=pk, user=request.user)
-        notif.is_read = True
-        notif.save()
+        updated = Notification.objects.filter(
+            pk=pk,
+            user=request.user,
+            is_read=False
+        ).update(is_read=True)
+
+        if updated == 0:
+            return Response({"detail": "Not found or already read"}, status=404)
+
         return Response({"detail": "Notification marked as read"})
+
     except Notification.DoesNotExist:
         return Response({"detail": "Not found"}, status=404)
 

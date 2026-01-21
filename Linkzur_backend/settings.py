@@ -84,15 +84,17 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'Linkzur_backend.wsgi.application'
 
-# ✅ SQLite for local — fine for Render free tier
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
+        "OPTIONS": {
+            "timeout": 30,
+        },
     }
 }
 
-# ✅ Password validators
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
@@ -100,7 +102,7 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-# ✅ DRF & JWT
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
@@ -115,15 +117,15 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
-# ✅ Internationalization
+
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 
-# ✅ Static files — serves React build correctly
+
 STATIC_URL = '/static/'
-STATICFILES_DIRS = [BASE_DIR / 'frontend_build' / 'static']  # React build static
+STATICFILES_DIRS = [BASE_DIR / 'frontend_build' / 'static']  
 STATIC_ROOT = BASE_DIR / 'staticfiles'  # where collectstatic collects
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
