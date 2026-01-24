@@ -1037,60 +1037,115 @@ def remove_from_wishlist(request, product_id):
 # ==========================================================
 # ORDERS & INVOICES
 # ==========================================================
+from collections import defaultdict
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+
+from collections import defaultdict
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+
+from collections import defaultdict
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from django.db import transaction
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def place_order(request):
-    serializer = OrderSerializer(data=request.data, context={"request": request})
-    if not serializer.is_valid():
-        return Response(serializer.errors, status=400)
-
-    order = serializer.save()
-
-    # Calculate price
-    subtotal = sum(i.price * i.quantity for i in order.items.all())
-    order.total_price = subtotal
-    order.status = "pending"
-    order.save()
-
-    # Clear cart
-    CartItem.objects.filter(user=request.user).delete()
-
-    # ----------------------------------------------------
-    # 🔔 IN-APP NOTIFICATION — BUYER
-    # ----------------------------------------------------
-    Notification.objects.create(
-        user=request.user,
-        message=f"Your order #{order.id} has been placed successfully!"
+    serializer = OrderSerializer(
+        data=request.data,
+        context={"request": request}
     )
+    serializer.is_valid(raise_exception=True)
+
+    buyer = request.user
+    address = serializer.validated_data.get("address")
+    items = serializer.validated_data["items"]
 
     # ----------------------------------------------------
-    # 📧 EMAIL — BUYER
+    # GROUP ITEMS BY SELLER (FROM PRODUCT)
     # ----------------------------------------------------
-    send_order_confirmation_email(request.user.email, order)
+    items_by_seller = defaultdict(list)
+
+    for item in items:
+        seller = item["product"].seller
+        items_by_seller[seller].append(item)
+
+    created_orders = []
 
     # ----------------------------------------------------
-    # 🔔 + 📧 SELLER NOTIFICATIONS
+    # ATOMIC TRANSACTION (IMPORTANT)
     # ----------------------------------------------------
-    seller_ids = order.items.values_list("product__seller_id", flat=True).distinct()
-    sellers = User.objects.filter(id__in=seller_ids)
+    with transaction.atomic():
+        for seller, seller_items in items_by_seller.items():
 
-    for seller in sellers:
-        # IN-APP notification
-        Notification.objects.create(
-            user=seller,
-            message=f"You received a new order #{order.id}."
-        )
-        print("hii4")
+            # CREATE ORDER (ONE PER SELLER)
+            order = Order.objects.create(
+                buyer=buyer,
+                address=address,
+                status="pending",
+            )
 
-        # Email
-        print(seller.email,order)
-        send_seller_new_order_email(seller.email, order)
-        print("done")
+            total_price = 0
 
-    return Response({
-        "order": OrderSerializer(order).data,
-    }, status=201)
+            for item in seller_items:
+                product = item["product"]
+                variant = item.get("variant")
+                quantity = item["quantity"]
+                price = item["price"]
 
+                OrderItem.objects.create(
+                    order=order,
+                    product=product,
+                    variant=variant,
+                    quantity=quantity,
+                    price=price
+                )
+
+                total_price += price * quantity
+
+            order.total_price = total_price
+            order.save()
+
+            created_orders.append(order)
+
+            # ------------------------------------------------
+            # 🔔 SELLER NOTIFICATION + EMAIL
+            # ------------------------------------------------
+            Notification.objects.create(
+                user=seller,
+                message=f"You received a new order #{order.id}."
+            )
+            send_seller_new_order_email(seller.email, order)
+
+        # ----------------------------------------------------
+        # 🔔 BUYER NOTIFICATION + EMAIL (PER ORDER)
+        # ----------------------------------------------------
+        for order in created_orders:
+            Notification.objects.create(
+                user=buyer,
+                message=f"Your order #{order.id} has been placed successfully!"
+            )
+            send_order_confirmation_email(buyer.email, order)
+
+        # ----------------------------------------------------
+        # 🧹 CLEAR CART ONCE
+        # ----------------------------------------------------
+        CartItem.objects.filter(user=buyer).delete()
+
+    return Response(
+        {
+            "orders": OrderSerializer(created_orders, many=True).data
+        },
+        status=status.HTTP_201_CREATED
+    )
 
 
 @api_view(["GET"])
