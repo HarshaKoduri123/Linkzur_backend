@@ -1659,7 +1659,7 @@ def search_products(request):
         many=True,
         context={"request": request}
     )
-    print(serializer.data)
+ 
     return Response(serializer.data)
 
 
