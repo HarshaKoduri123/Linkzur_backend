@@ -1612,38 +1612,38 @@ def send_message(request, conversation_id):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def search_products(request):
-    """
-    Search products by name, CAS No, Ref No, or HSN code.
-
-    Examples:
-      /api/search/?q=acetone
-      /api/search/?q=67-64-1
-      /api/search/?q=P001
-      /api/search/?q=2207
-    """
     query = request.GET.get("q", "").strip()
-    if not query:
-        return Response({"detail": "Query parameter 'q' is required."}, status=400)
+    city = request.GET.get("city", "").strip()
 
-    # Detect CAS number pattern (e.g., 67-64-1 or 7732-18-5)
+    if not query:
+        return Response(
+            {"detail": "Query parameter 'q' is required."},
+            status=400
+        )
+
     is_cas_no = bool(re.match(r"^\d{2,7}-\d{2}-\d$", query))
 
-    # Build search filter dynamically
     filters = Q()
 
     if is_cas_no:
-        filters |= Q(cas_no__icontains=query)
+        filters &= Q(cas_no__icontains=query)
     else:
-        filters |= (
+        filters &= (
             Q(name__icontains=query)
             | Q(ref_no__icontains=query)
             | Q(hsn__icontains=query)
             | Q(cas_no__icontains=query)
         )
 
+    if city:
+        filters &= Q(
+            seller__seller_profile__city__iexact=city
+        )
+
     products = (
-        Product.objects.filter(filters)
-        .select_related("seller")
+        Product.objects
+        .filter(filters)
+        .select_related("seller", "seller__seller_profile")
         .prefetch_related("variants", "reviews")
         .annotate(
             min_effective_price=Min(
@@ -1652,9 +1652,15 @@ def search_products(request):
         )
         .order_by("name")
     )
+   
 
-    serializer = ProductSerializer(products, many=True, context={"request": request})
-    return Response(serializer.data, status=200)
+    serializer = ProductSerializer(
+        products,
+        many=True,
+        context={"request": request}
+    )
+    print(serializer.data)
+    return Response(serializer.data)
 
 
 # ==========================================================

@@ -74,6 +74,8 @@ urlpatterns = [
 
     path("products/<int:pk>/update/", update_product, name="product-update"),
     path("products/<int:pk>/delete/", delete_product, name="product-delete"),
+
+    
     path("search/", search_products, name="search-products"),
 
     # ------------------------
