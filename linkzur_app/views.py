@@ -1609,6 +1609,10 @@ def send_message(request, conversation_id):
 # SEARCH
 # ==========================================================
 
+# ==========================================================
+# SEARCH
+# ==========================================================
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def search_products(request):
@@ -1652,15 +1656,19 @@ def search_products(request):
         )
         .order_by("name")
     )
-   
+
+    # ✅ ADD PAGINATION HERE
+    paginator = ProductPagination()
+    page = paginator.paginate_queryset(products, request)
 
     serializer = ProductSerializer(
-        products,
+        page,
         many=True,
         context={"request": request}
     )
- 
-    return Response(serializer.data)
+
+    return paginator.get_paginated_response(serializer.data)
+
 
 
 # ==========================================================
