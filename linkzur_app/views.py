@@ -491,6 +491,42 @@ def update_user_profile(request):
             "shippingAddresses": shipping_list,
             "billingAddress": billing_info,
         })
+    if user.role == "seller":
+        profile = SellerProfile.objects.get(user=user)
+
+        profile.business_name = data.get("businessName", profile.business_name)
+        profile.entity_type = data.get("entityType", profile.entity_type)
+        profile.gst_number = data.get("gstNumber", profile.gst_number)
+        profile.pan_number = data.get("panNumber", profile.pan_number)
+
+        profile.designation = data.get("designation", profile.designation)
+        profile.website_url = data.get("websiteUrl", profile.website_url)
+        profile.linkedin_url = data.get("linkedinUrl", profile.linkedin_url)
+
+        profile.address_line1 = data.get("addressLine1", profile.address_line1)
+        profile.address_line2 = data.get("addressLine2", profile.address_line2)
+        profile.city = data.get("city", profile.city)
+        profile.state = data.get("state", profile.state)
+        profile.pincode = data.get("pincode", profile.pincode)
+
+        # Handle seller categories (multiple values from FormData)
+        categories = data.getlist("sellerCategories")
+        if categories:
+            profile.seller_categories = categories
+
+        # Handle file uploads
+        if "businessRegDoc" in request.FILES:
+            profile.business_document = request.FILES["businessRegDoc"]
+
+        if "gstCertificate" in request.FILES:
+            profile.gst_certificate = request.FILES["gstCertificate"]
+
+        profile.save()
+
+        return Response({
+            "message": "Seller profile updated successfully"
+        })
+
 
     return Response({"error": "Invalid user role"}, status=400)
 
@@ -1605,13 +1641,6 @@ def send_message(request, conversation_id):
     return Response(serializer.errors, status=400)
 
 
-# ==========================================================
-# SEARCH
-# ==========================================================
-
-# ==========================================================
-# SEARCH
-# ==========================================================
 
 @api_view(["GET"])
 @permission_classes([AllowAny])
@@ -1657,7 +1686,7 @@ def search_products(request):
         .order_by("name")
     )
 
-    # ✅ ADD PAGINATION HERE
+ 
     paginator = ProductPagination()
     page = paginator.paginate_queryset(products, request)
 
