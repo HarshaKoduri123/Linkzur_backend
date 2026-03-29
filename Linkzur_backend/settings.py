@@ -19,6 +19,7 @@ ALLOWED_HOSTS = [
     "10.0.0.93",
     "linkzur.com",
     "www.linkzur.com",
+    "192.168.0.12",
 ]
 
 
