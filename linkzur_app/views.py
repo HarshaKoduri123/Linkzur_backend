@@ -594,44 +594,108 @@ def verify_password_reset(request):
 # ==========================================================
 
 class ProductPagination(PageNumberPagination):
-    page_size = 20
+    page_size = 24
     page_size_query_param = "page_size"
     max_page_size = 100
 
 
 
+from django.db.models import Q, Min
+from django.core.paginator import Paginator
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+
 @api_view(["GET"])
-@permission_classes([AllowAny])
 def list_products(request):
-    qs = (
-        Product.objects
-        .select_related("seller")
-        .prefetch_related("variants", "reviews")
-        .order_by("-created_at")
-    )
+
+    products = Product.objects.all()
+
+    # =========================
+    # FILTERS
+    # =========================
 
     category = request.GET.get("category")
-    seller = request.GET.get("seller")
+    brand = request.GET.get("brand")
+    min_price = request.GET.get("min_price")
+    max_price = request.GET.get("max_price")
+    search = request.GET.get("search")
 
     if category:
-        qs = qs.filter(category=category)
+        products = products.filter(category__iexact=category)
 
-    if seller:
-        qs = qs.filter(seller_id=seller)
+    if brand:
+        products = products.filter(brand__iexact=brand)
 
-    if request.user.is_authenticated and request.user.role == "seller":
-        qs = qs.filter(seller=request.user)
+    if search:
+        products = products.filter(
+            Q(name__icontains=search) |
+            Q(description__icontains=search) |
+            Q(brand__icontains=search)
+        )
 
-    paginator = ProductPagination()
-    page = paginator.paginate_queryset(qs, request)
+    # =========================
+    # PRICE FILTER (variant based)
+    # =========================
+
+    if min_price or max_price:
+        products = products.annotate(
+            min_variant_price=Min("variants__price")
+        )
+
+        if min_price:
+            products = products.filter(
+                min_variant_price__gte=min_price
+            )
+
+        if max_price:
+            products = products.filter(
+                min_variant_price__lte=max_price
+            )
+
+    # =========================
+    # SORTING
+    # =========================
+
+    sort = request.GET.get("sort")
+
+    if sort == "price_low":
+        products = products.annotate(
+            min_variant_price=Min("variants__price")
+        ).order_by("min_variant_price")
+
+    elif sort == "price_high":
+        products = products.annotate(
+            min_variant_price=Min("variants__price")
+        ).order_by("-min_variant_price")
+
+    elif sort == "newest":
+        products = products.order_by("-created_at")
+
+    elif sort == "popular":
+        products = products.order_by("-id")
+
+    # =========================
+    # PAGINATION
+    # =========================
+
+    page = int(request.GET.get("page", 1))
+    page_size = int(request.GET.get("page_size", 20))
+
+    paginator = Paginator(products, page_size)
+    page_obj = paginator.get_page(page)
 
     serializer = ProductSerializer(
-        page,
+        page_obj.object_list,
         many=True,
         context={"request": request}
     )
 
-    return paginator.get_paginated_response(serializer.data)
+    return Response({
+        "results": serializer.data,
+        "count": paginator.count,
+        "num_pages": paginator.num_pages,
+        "current_page": page
+    })
 
 
 @api_view(["POST"])
@@ -937,43 +1001,45 @@ def add_recent_view(request, product_id):
 @permission_classes([IsAuthenticated])
 def get_recently_viewed(request):
     user = request.user
-    items = RecentlyViewed.objects.filter(user=user).select_related("product")
-    data = RecentlyViewedSerializer(items, many=True, context={"request": request}).data
-    
-    return Response(data)
+
+    items = (
+        RecentlyViewed.objects
+        .filter(user=user)
+        .select_related("product", "product__seller", "product__seller__seller_profile")
+        .prefetch_related("product__variants", "product__reviews")
+        .order_by("-viewed_at")
+    )
+
+    paginator = ProductPagination()
+    page = paginator.paginate_queryset(items, request)
+
+    serializer = RecentlyViewedSerializer(
+        page,
+        many=True,
+        context={"request": request}
+    )
+    return paginator.get_paginated_response(serializer.data)
+
 
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def recommended_products(request):
-    """
-    Random product recommendations (guest + buyer).
-    Paginated.
-    """
-
     qs = (
         Product.objects
         .select_related("seller")
         .prefetch_related("variants", "reviews")
     )
 
-    # ❌ Seller should NOT get recommendations
-    if request.user.is_authenticated and request.user.role == "seller":
+    if request.user.is_authenticated and getattr(request.user, "role", None) == "seller":
         qs = qs.none()
 
-    # ✅ Random ordering (safe for pagination)
     qs = qs.order_by("?")
 
     paginator = ProductPagination()
     page = paginator.paginate_queryset(qs, request)
-
-    serializer = ProductSerializer(
-        page,
-        many=True,
-        context={"request": request}
-    )
-
+    serializer = ProductSerializer(page, many=True, context={"request": request})
     return paginator.get_paginated_response(serializer.data)
-    
+
 # ==========================================================
 # CART & WISHLIST 
 # ==========================================================
@@ -1519,29 +1585,53 @@ def upload_quotation_for_request(request, request_id):
     """
     Seller uploads a quotation file in response to a pre-order QuotationRequest.
     """
-    qreq = get_object_or_404(QuotationRequest, pk=request_id, seller=request.user)
-
-    if qreq.is_resolved:
-        return Response({"detail": "Quotation already provided for this request."}, status=400)
-
-    data = request.data.copy()
-    data["request"] = qreq.id
-    serializer = QuotationSerializer(data=data, context={"request": request})
-
-    if serializer.is_valid():
-        quotation = serializer.save(uploaded_by=request.user)
-        qreq.is_resolved = True
-        qreq.save()
-
-        Notification.objects.create(
-            user=qreq.buyer,
-            message=f"Seller {request.user.name} uploaded a quotation for {qreq.product.name}."
+    try:
+        qreq = get_object_or_404(
+            QuotationRequest,
+            pk=request_id,
+            seller=request.user
         )
 
-        return Response(QuotationSerializer(quotation, context={"request": request}).data, status=201)
-    return Response(serializer.errors, status=400)
+        if qreq.is_resolved:
+            return Response(
+                {"detail": "Quotation already provided for this request."},
+                status=400
+            )
 
+        serializer = QuotationSerializer(
+            data={
+                "request": qreq.id,
+                "file": request.FILES.get("file"),
+                "note": request.data.get("note", ""),
+            },
+            context={"request": request},
+        )
 
+        if serializer.is_valid():
+            quotation = serializer.save(uploaded_by=request.user)
+
+            qreq.is_resolved = True
+            qreq.save()
+
+            Notification.objects.create(
+                user=qreq.buyer,
+                message=f"Seller {request.user.name} uploaded a quotation for {qreq.product.name}."
+            )
+
+            return Response(
+                QuotationSerializer(
+                    quotation,
+                    context={"request": request}
+                ).data,
+                status=201
+            )
+
+        return Response(serializer.errors, status=400)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return Response({"error": str(e)}, status=500)
 
 # ==========================================================
 # PRODUCT CONVERSATIONS & MESSAGES
@@ -1669,9 +1759,7 @@ def search_products(request):
         )
 
     if city:
-        filters &= Q(
-            seller__seller_profile__city__iexact=city
-        )
+        filters &= Q(seller__seller_profile__city__iexact=city)
 
     products = (
         Product.objects
@@ -1686,7 +1774,6 @@ def search_products(request):
         .order_by("name")
     )
 
- 
     paginator = ProductPagination()
     page = paginator.paginate_queryset(products, request)
 
@@ -1697,6 +1784,7 @@ def search_products(request):
     )
 
     return paginator.get_paginated_response(serializer.data)
+
 
 
 
@@ -2053,3 +2141,32 @@ def seller_customer_insights(request):
             "avg_customer_value": (total_spent / total_customers) if total_customers else 0,
         }
     )
+
+
+
+from django.db.models import Max
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def top_discount_products(request):
+    qs = (
+        Product.objects
+        .select_related("seller")
+        .prefetch_related("variants", "reviews")
+        .annotate(max_discount=Max("variants__discount"))
+        .filter(max_discount__gt=0)
+        .order_by("-max_discount", "?")
+    )
+
+    paginator = ProductPagination()
+    page = paginator.paginate_queryset(qs, request)
+
+    serializer = ProductSerializer(
+        page,
+        many=True,
+        context={"request": request}
+    )
+
+    return paginator.get_paginated_response(serializer.data)

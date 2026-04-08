@@ -44,7 +44,8 @@ from .views import (
     upload_invoice,
     add_recent_view,
     get_recently_viewed,
-    recommended_products
+    recommended_products,
+    top_discount_products,
 )
 
 urlpatterns = [
@@ -63,6 +64,8 @@ urlpatterns = [
 
     path("request-password-reset/", request_password_reset),
     path("verify-password-reset/", verify_password_reset),
+
+    path("products/top-discounts/", top_discount_products),
 
 
     # ------------------------
