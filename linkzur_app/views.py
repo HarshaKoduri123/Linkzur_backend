@@ -594,7 +594,7 @@ def verify_password_reset(request):
 # ==========================================================
 
 class ProductPagination(PageNumberPagination):
-    page_size = 24
+    page_size = 20
     page_size_query_param = "page_size"
     max_page_size = 100
 
@@ -608,12 +608,10 @@ from rest_framework.response import Response
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def list_products(request):
+    products = Product.objects.all().order_by("-created_at")
 
-    products = Product.objects.all()
-
-    # =========================
-    # FILTERS
-    # =========================
+    if request.user.is_authenticated and request.user.role == "seller":
+        products = products.filter(seller=request.user)
 
     category = request.GET.get("category")
     brand = request.GET.get("brand")
@@ -629,14 +627,11 @@ def list_products(request):
 
     if search:
         products = products.filter(
-            Q(name__icontains=search) |
-            Q(description__icontains=search) |
-            Q(brand__icontains=search)
+            Q(name__icontains=search)
+            | Q(description__icontains=search)
+            | Q(brand__icontains=search)
+            | Q(ref_no__icontains=search)
         )
-
-    # =========================
-    # PRICE FILTER (variant based)
-    # =========================
 
     if min_price or max_price:
         products = products.annotate(
@@ -644,59 +639,42 @@ def list_products(request):
         )
 
         if min_price:
-            products = products.filter(
-                min_variant_price__gte=min_price
-            )
+            products = products.filter(min_variant_price__gte=min_price)
 
         if max_price:
-            products = products.filter(
-                min_variant_price__lte=max_price
-            )
-
-    # =========================
-    # SORTING
-    # =========================
+            products = products.filter(min_variant_price__lte=max_price)
 
     sort = request.GET.get("sort")
 
     if sort == "price_low":
         products = products.annotate(
             min_variant_price=Min("variants__price")
-        ).order_by("min_variant_price")
+        ).order_by("min_variant_price", "-id")
 
     elif sort == "price_high":
         products = products.annotate(
             min_variant_price=Min("variants__price")
-        ).order_by("-min_variant_price")
+        ).order_by("-min_variant_price", "-id")
 
     elif sort == "newest":
-        products = products.order_by("-created_at")
+        products = products.order_by("-created_at", "-id")
 
     elif sort == "popular":
         products = products.order_by("-id")
 
-    # =========================
-    # PAGINATION
-    # =========================
+    else:
+        products = products.order_by("-created_at", "-id")
 
-    page = int(request.GET.get("page", 1))
-    page_size = int(request.GET.get("page_size", 20))
-
-    paginator = Paginator(products, page_size)
-    page_obj = paginator.get_page(page)
+    paginator = ProductPagination()
+    page = paginator.paginate_queryset(products, request)
 
     serializer = ProductSerializer(
-        page_obj.object_list,
+        page,
         many=True,
-        context={"request": request}
+        context={"request": request},
     )
 
-    return Response({
-        "results": serializer.data,
-        "count": paginator.count,
-        "num_pages": paginator.num_pages,
-        "current_page": page
-    })
+    return paginator.get_paginated_response(serializer.data)
 
 
 @api_view(["POST"])
@@ -2158,10 +2136,11 @@ def top_discount_products(request):
         .prefetch_related("variants", "reviews")
         .annotate(max_discount=Max("variants__discount"))
         .filter(max_discount__gt=0)
-        .order_by("-max_discount", "?")
+        .order_by("-max_discount", "-created_at", "-id")
     )
 
     paginator = ProductPagination()
+
     page = paginator.paginate_queryset(qs, request)
 
     serializer = ProductSerializer(

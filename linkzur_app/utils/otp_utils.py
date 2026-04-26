@@ -74,7 +74,7 @@ def send_seller_approval_email(email: str, temp_password: str) -> bool:
         f"Email: {email}\n"
         f"Temporary Password: {temp_password}\n\n"
         f"For security, please log in and change your password immediately.\n"
-        f"You can reset your password anytime here:\n{reset_link}\n\n"
+        f"You can reset your password by clicking on forget-password\n"
         f"We’re excited to have you onboard!\n\n"
         f"Best regards,\n"
         f"Linkzur Team"
